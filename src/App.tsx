@@ -360,7 +360,11 @@ export default function App() {
       </header>
 
       {phase === "initial-welcome" && (
-        <InitialWelcomeView name={studentName} onStart={() => startSession(null, "initial")} />
+        <InitialWelcomeView
+          name={studentName}
+          onStart={() => startSession(null, "initial")}
+          onSkip={() => { markInitialDone(studentName); setInitialDone(true); setPhase("lobby"); }}
+        />
       )}
 
       {phase === "lobby" && (
@@ -444,7 +448,7 @@ function NameGate({ onSignIn }: { onSignIn: (name: string) => void }) {
 
 // ─── Initial welcome ──────────────────────────────────────────────────────────
 
-function InitialWelcomeView({ name, onStart }: { name: string; onStart: () => void }) {
+function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: () => void; onSkip: () => void }) {
   return (
     <div className="card gate-card">
       <p className="gate-heading">Welcome, {name}!</p>
@@ -455,6 +459,7 @@ function InitialWelcomeView({ name, onStart }: { name: string; onStart: () => vo
       </p>
       <div className="actions">
         <button className="btn-primary" onClick={onStart}>Start</button>
+        <button className="btn-ghost" onClick={onSkip}>Skip for now</button>
       </div>
     </div>
   );
