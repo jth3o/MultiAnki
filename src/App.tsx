@@ -1,18 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { LESSONS, factsForLesson, shuffle, type Pair, type Lesson } from "./curriculum";
-import { isApproved, normalizeName } from "./students";
-import { SHEETS_ENDPOINT } from "./config";
+import { checkStudent, logFact, logSession, fetchMistakes } from "./supabase";
 import "./App.css";
-
-// ─── Sheets ───────────────────────────────────────────────────────────────────
-
-function postToSheets(payload: object) {
-  if (!SHEETS_ENDPOINT) return;
-  fetch(SHEETS_ENDPOINT, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  }).catch(() => { /* ignore */ });
-}
 
 // ─── Name gate helpers ────────────────────────────────────────────────────────
 
@@ -21,7 +10,7 @@ function loadStudentName(): string | null { return localStorage.getItem(NAME_KEY
 function saveStudentName(name: string) { localStorage.setItem(NAME_KEY, name); }
 function clearStudentName() { localStorage.removeItem(NAME_KEY); }
 
-// ─── Progress ─────────────────────────────────────────────────────────────────
+// ─── Progress (local cache of mistakes) ───────────────────────────────────────
 
 interface Progress { mistakes: Pair[]; }
 const STORAGE_KEY = "multianki_v2";
@@ -140,15 +129,12 @@ export default function App() {
       setSessionResult({ mode, correct, total, newMistakeCount: mistakes.length });
     }
 
-    // Post session summary
-    postToSheets({
-      type: "session-summary",
-      student,
-      session: mode,
+    logSession({
+      student_name: student ?? "",
+      session_type: mode,
       lesson: lesson?.label ?? "Review",
       correct,
       total,
-      mistakes: mistakes.map((m) => `${m.a}×${m.b}`),
     });
 
     setPhase("session-done");
@@ -218,15 +204,12 @@ export default function App() {
     setSessionCorrect((c) => c + (correct ? 1 : 0));
     setSessionTotal((t) => t + 1);
 
-    // Log every individual fact attempt
-    postToSheets({
-      type: "fact",
-      student: studentName,
-      lesson: activeLesson?.label ?? "Review",
-      fact: `${pair.a}×${pair.b}`,
+    logFact({
+      student_name: studentName ?? "",
+      lesson: activeLessonRef.current?.label ?? "Review",
       a: pair.a,
       b: pair.b,
-      answer,
+      answer_given: answer,
       correct,
     });
 
@@ -243,14 +226,12 @@ export default function App() {
     setSessionMistakes((m) => [...m, pair]);
     setSessionTotal((t) => t + 1);
 
-    postToSheets({
-      type: "fact",
-      student: studentName,
-      lesson: activeLesson?.label ?? "Review",
-      fact: `${pair.a}×${pair.b}`,
+    logFact({
+      student_name: studentName ?? "",
+      lesson: activeLessonRef.current?.label ?? "Review",
       a: pair.a,
       b: pair.b,
-      answer: null,
+      answer_given: null,
       correct: false,
     });
 
@@ -308,10 +289,19 @@ export default function App() {
 
   const hasMistakes = progress.mistakes.length > 0;
 
+  // ── Load mistakes from Supabase on sign-in ─────────────────────────────────
+
+  const handleSignIn = async (name: string) => {
+    saveStudentName(name);
+    setStudentName(name);
+    const mistakes = await fetchMistakes(name);
+    setProgress({ mistakes });
+  };
+
   // ─── Auth ──────────────────────────────────────────────────────────────────
 
   if (!studentName) {
-    return <NameGate onSignIn={(name) => { saveStudentName(name); setStudentName(name); }} />;
+    return <NameGate onSignIn={handleSignIn} />;
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -365,13 +355,24 @@ export default function App() {
 function NameGate({ onSignIn }: { onSignIn: (name: string) => void }) {
   const [input, setInput] = useState("");
   const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  const attempt = () => {
-    if (isApproved(input)) { setError(false); onSignIn(normalizeName(input)); }
-    else { setError(true); setInput(""); inputRef.current?.focus(); }
+  const attempt = async () => {
+    if (!input.trim()) return;
+    setLoading(true);
+    setError(false);
+    const approved = await checkStudent(input);
+    setLoading(false);
+    if (approved) {
+      onSignIn(input.trim());
+    } else {
+      setError(true);
+      setInput("");
+      inputRef.current?.focus();
+    }
   };
 
   return (
@@ -388,10 +389,13 @@ function NameGate({ onSignIn }: { onSignIn: (name: string) => void }) {
           onKeyDown={(e) => { if (e.key === "Enter" && input.trim()) attempt(); }}
           placeholder="your name"
           autoComplete="off"
+          disabled={loading}
         />
         {error && <p className="gate-error">Name not recognised. Check with your teacher.</p>}
         <div className="actions">
-          <button className="btn-primary" onClick={attempt} disabled={!input.trim()}>Continue</button>
+          <button className="btn-primary" onClick={attempt} disabled={!input.trim() || loading}>
+            {loading ? "Checking…" : "Continue"}
+          </button>
         </div>
       </div>
     </div>
