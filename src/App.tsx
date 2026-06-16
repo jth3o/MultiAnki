@@ -437,11 +437,9 @@ function PracticeView({
             <p
               className={`result-label ${feedback.correct ? "correct" : "incorrect"}`}
             >
-              {feedback.skipped
-                ? `The answer is ${feedback.answer}.${stage.type === "afternoon" ? " Try again in a moment." : " You'll see this again this afternoon."}`
-                : feedback.correct
+              {feedback.correct
                 ? "Correct."
-                : `Not quite — ${feedback.answer}.${stage.type === "afternoon" ? " Try again in a moment." : " You'll see this again this afternoon."}`}
+                : `${pair.a} × ${pair.b} = ${feedback.answer}`}
             </p>
             <div className="actions">
               <button className="btn-primary" onClick={onNext}>
