@@ -217,21 +217,28 @@ export default function App() {
   const startReview = () => {
     if (progress.mistakes.length === 0) return;
     isFinishingRef.current = false;
-    const seen = new Set<string>();
-    const deduped = progress.mistakes.filter((p) => {
-      const key = `${p.a}x${p.b}`;
-      if (seen.has(key)) return false;
-      seen.add(key); return true;
-    });
-    setQueue(shuffle(deduped));
+    setQueue(shuffle([...progress.mistakes]));
     setSessionMistakes([]);
     setSessionCorrect(0);
     setSessionTotal(0);
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
-    setSecondsLeft(null);
+    setSecondsLeft(300); // 5 minutes
     setPhase("review");
+
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setSecondsLeft((s) => {
+        if (s === null || s <= 1) {
+          clearInterval(timerRef.current!);
+          timerRef.current = null;
+          endSession();
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
   };
 
   // ── Submit / skip ──────────────────────────────────────────────────────────
@@ -369,7 +376,7 @@ export default function App() {
         <PracticeView
           label={phase === "review" ? "Review" : activeMode === "initial" ? "Initial Test" : (activeLesson?.label ?? "")}
           tag={phase === "review" ? `${queue.length} remaining` : activeMode === "initial" ? `${queue.length} remaining` : (activeLesson?.tag ?? "")}
-          mode={activeMode}
+          mode={phase === "review" ? "3min" : activeMode}
           secondsLeft={secondsLeft}
           pair={queue[0]}
           input={pracInput}
