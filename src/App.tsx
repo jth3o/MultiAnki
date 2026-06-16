@@ -1,53 +1,52 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  LESSONS, DURATIONS, buildFiveMinQueue, buildThreeMinQueue, shuffle,
+  LESSONS, DURATIONS, buildInitialQueue, buildFiveMinQueue, buildThreeMinQueue, shuffle,
   type Pair, type Lesson, type SessionMode, type FactStat,
 } from "./curriculum";
 import { checkStudent, logFact, logSession, fetchMistakes, fetchFactStats, updateFactProgress } from "./supabase";
 import "./App.css";
 
-// ─── Name gate helpers ────────────────────────────────────────────────────────
+// ─── localStorage helpers ─────────────────────────────────────────────────────
 
-const NAME_KEY = "multianki_student";
+const NAME_KEY     = "multianki_student";
+const PRETEST_KEY  = "multianki_pretests";
+const STORAGE_KEY  = "multianki_v2";
+
 function loadStudentName(): string | null { return localStorage.getItem(NAME_KEY); }
 function saveStudentName(n: string) { localStorage.setItem(NAME_KEY, n); }
 function clearStudentName() { localStorage.removeItem(NAME_KEY); }
 
-// ─── Pretest tracking ─────────────────────────────────────────────────────────
-
-const PRETEST_KEY = "multianki_pretests";
 function loadPretests(): Set<string> {
-  try { const r = localStorage.getItem(PRETEST_KEY); if (r) return new Set(JSON.parse(r)); }
-  catch { /* ignore */ }
+  try { const r = localStorage.getItem(PRETEST_KEY); if (r) return new Set(JSON.parse(r)); } catch { /**/ }
   return new Set();
 }
-function savePretests(s: Set<string>) {
-  localStorage.setItem(PRETEST_KEY, JSON.stringify([...s]));
+function savePretests(s: Set<string>) { localStorage.setItem(PRETEST_KEY, JSON.stringify([...s])); }
+
+function isInitialDone(name: string): boolean {
+  return localStorage.getItem(`multianki_init_${name}`) === "true";
+}
+function markInitialDone(name: string) {
+  localStorage.setItem(`multianki_init_${name}`, "true");
 }
 
-// ─── Progress (local mistake cache) ───────────────────────────────────────────
-
 interface Progress { mistakes: Pair[]; }
-const STORAGE_KEY = "multianki_v2";
 function loadProgress(): Progress {
-  try { const r = localStorage.getItem(STORAGE_KEY); if (r) return JSON.parse(r); }
-  catch { /* ignore */ }
+  try { const r = localStorage.getItem(STORAGE_KEY); if (r) return JSON.parse(r); } catch { /**/ }
   return { mistakes: [] };
 }
 function saveProgress(p: Progress) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); } catch { /* ignore */ }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); } catch { /**/ }
 }
 
-// ─── Timer ────────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTime(s: number): string {
-  const m = Math.floor(s / 60);
-  return `${m}:${(s % 60).toString().padStart(2, "0")}`;
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AppPhase = "lobby" | "loading" | "practice" | "review" | "session-done";
+type AppPhase = "lobby" | "initial-welcome" | "loading" | "practice" | "review" | "session-done";
 
 interface PracticeFeedback { correct: boolean; answer: number; }
 
@@ -62,59 +61,59 @@ interface SessionResult {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [studentName, setStudentName] = useState<string | null>(loadStudentName);
-  const [progress, setProgress] = useState<Progress>(loadProgress);
+  const [studentName, setStudentName]         = useState<string | null>(loadStudentName);
+  const [progress, setProgress]               = useState<Progress>(loadProgress);
   const [completedPretests, setCompletedPretests] = useState<Set<string>>(loadPretests);
-  const [phase, setPhase] = useState<AppPhase>("lobby");
-  const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
-  const [activeMode, setActiveMode] = useState<SessionMode>("5min");
+  const [initialDone, setInitialDone]         = useState<boolean>(
+    studentName ? isInitialDone(studentName) : false
+  );
+  const [phase, setPhase]                     = useState<AppPhase>(() => {
+    const name = loadStudentName();
+    if (name && !isInitialDone(name)) return "initial-welcome";
+    return "lobby";
+  });
+  const [activeLesson, setActiveLesson]       = useState<Lesson | null>(null);
+  const [activeMode, setActiveMode]           = useState<SessionMode>("5min");
 
   // Practice state
-  const [queue, setQueue] = useState<Pair[]>([]);
+  const [queue, setQueue]                     = useState<Pair[]>([]);
   const [sessionMistakes, setSessionMistakes] = useState<Pair[]>([]);
-  const [pracPhase, setPracPhase] = useState<"question" | "feedback">("question");
-  const [pracInput, setPracInput] = useState("");
-  const [pracFeedback, setPracFeedback] = useState<PracticeFeedback | null>(null);
-  const [sessionCorrect, setSessionCorrect] = useState(0);
-  const [sessionTotal, setSessionTotal] = useState(0);
+  const [pracPhase, setPracPhase]             = useState<"question" | "feedback">("question");
+  const [pracInput, setPracInput]             = useState("");
+  const [pracFeedback, setPracFeedback]       = useState<PracticeFeedback | null>(null);
+  const [sessionCorrect, setSessionCorrect]   = useState(0);
+  const [sessionTotal, setSessionTotal]       = useState(0);
+  const [secondsLeft, setSecondsLeft]         = useState<number | null>(null);
+  const [sessionResult, setSessionResult]     = useState<SessionResult | null>(null);
 
-  // Timer
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
-
-  const [sessionResult, setSessionResult] = useState<SessionResult | null>(null);
-
-  const inputRef = useRef<HTMLInputElement>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inputRef   = useRef<HTMLInputElement>(null);
+  const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const isFinishingRef = useRef(false);
 
-  // Stable refs for timer callbacks
+  // Stable refs for timer/endSession callback
   const sessionMistakesRef = useRef<Pair[]>([]);
-  const activeLessonRef = useRef<Lesson | null>(null);
-  const activeModeRef = useRef<SessionMode>("5min");
-  const sessionCorrectRef = useRef(0);
-  const sessionTotalRef = useRef(0);
-  const studentNameRef = useRef<string | null>(null);
-  const phaseRef = useRef<AppPhase>("lobby");
+  const activeLessonRef    = useRef<Lesson | null>(null);
+  const activeModeRef      = useRef<SessionMode>("5min");
+  const sessionCorrectRef  = useRef(0);
+  const sessionTotalRef    = useRef(0);
+  const studentNameRef     = useRef<string | null>(null);
+  const phaseRef           = useRef<AppPhase>("lobby");
 
-  useEffect(() => { sessionMistakesRef.current = sessionMistakes; }, [sessionMistakes]);
-  useEffect(() => { activeLessonRef.current = activeLesson; }, [activeLesson]);
-  useEffect(() => { activeModeRef.current = activeMode; }, [activeMode]);
-  useEffect(() => { sessionCorrectRef.current = sessionCorrect; }, [sessionCorrect]);
-  useEffect(() => { sessionTotalRef.current = sessionTotal; }, [sessionTotal]);
-  useEffect(() => { studentNameRef.current = studentName; }, [studentName]);
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
-
-  useEffect(() => { saveProgress(progress); }, [progress]);
+  useEffect(() => { sessionMistakesRef.current = sessionMistakes; },  [sessionMistakes]);
+  useEffect(() => { activeLessonRef.current = activeLesson; },         [activeLesson]);
+  useEffect(() => { activeModeRef.current = activeMode; },             [activeMode]);
+  useEffect(() => { sessionCorrectRef.current = sessionCorrect; },     [sessionCorrect]);
+  useEffect(() => { sessionTotalRef.current = sessionTotal; },         [sessionTotal]);
+  useEffect(() => { studentNameRef.current = studentName; },           [studentName]);
+  useEffect(() => { phaseRef.current = phase; },                       [phase]);
+  useEffect(() => { saveProgress(progress); },                         [progress]);
 
   useEffect(() => {
-    if ((phase === "practice" || phase === "review") && pracPhase === "question") {
+    if ((phase === "practice" || phase === "review") && pracPhase === "question")
       inputRef.current?.focus();
-    }
   }, [phase, pracPhase, queue]);
 
-  useEffect(() => () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-  }, []);
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
   // ── End session ────────────────────────────────────────────────────────────
 
@@ -124,17 +123,20 @@ export default function App() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
     const mistakes = sessionMistakesRef.current;
-    const lesson = activeLessonRef.current;
-    const mode = activeModeRef.current;
-    const correct = sessionCorrectRef.current;
-    const total = sessionTotalRef.current;
-    const student = studentNameRef.current ?? "";
-    const currentPhase = phaseRef.current;
+    const lesson   = activeLessonRef.current;
+    const mode     = activeModeRef.current;
+    const correct  = sessionCorrectRef.current;
+    const total    = sessionTotalRef.current;
+    const student  = studentNameRef.current ?? "";
+    const curPhase = phaseRef.current;
 
-    if (currentPhase === "practice") {
+    if (curPhase === "practice") {
       setProgress((prev) => ({ mistakes: [...prev.mistakes, ...mistakes] }));
-      // Mark pretest done if this was a 5-min session
-      if (mode === "5min" && lesson) {
+
+      if (mode === "initial") {
+        markInitialDone(student);
+        setInitialDone(true);
+      } else if (mode === "5min" && lesson) {
         setCompletedPretests((prev) => {
           const next = new Set(prev);
           next.add(lesson.id);
@@ -143,7 +145,6 @@ export default function App() {
         });
       }
     } else {
-      // review: remove cleared mistakes
       setProgress((prev) => ({
         mistakes: prev.mistakes.filter((p) =>
           mistakes.some((m) => m.a === p.a && m.b === p.b)
@@ -151,10 +152,16 @@ export default function App() {
       }));
     }
 
-    logSession({ student_name: student, session_type: currentPhase === "review" ? "review" : mode, lesson: lesson?.label ?? "Review", correct, total });
+    logSession({
+      student_name: student,
+      session_type: curPhase === "review" ? "review" : mode,
+      lesson: lesson?.label ?? (mode === "initial" ? "Initial Test" : "Review"),
+      correct,
+      total,
+    });
 
     setSessionResult({
-      mode: currentPhase === "review" ? "review" : mode,
+      mode: curPhase === "review" ? "review" : mode,
       lessonLabel: lesson?.label,
       correct,
       total,
@@ -163,32 +170,32 @@ export default function App() {
     setPhase("session-done");
   }, []);
 
-  // ── Start lesson ───────────────────────────────────────────────────────────
+  // ── Start session ──────────────────────────────────────────────────────────
 
-  const startLesson = async (lesson: Lesson, mode: SessionMode) => {
+  const startSession = async (lesson: Lesson | null, mode: SessionMode) => {
     isFinishingRef.current = false;
     setPhase("loading");
 
-    let queue: Pair[];
-    if (mode === "5min") {
-      queue = buildFiveMinQueue(lesson);
+    let q: Pair[];
+    if (mode === "initial") {
+      q = buildInitialQueue();
+    } else if (mode === "5min") {
+      q = buildFiveMinQueue(lesson!);
     } else {
-      const stats = await fetchFactStats(studentName ?? "", lesson.label) as FactStat[];
-      queue = buildThreeMinQueue(lesson, stats);
+      const stats = await fetchFactStats(studentName ?? "", lesson!.label) as FactStat[];
+      q = buildThreeMinQueue(lesson!, stats);
     }
 
     setActiveLesson(lesson);
     setActiveMode(mode);
-    setQueue(queue);
+    setQueue(q);
     setSessionMistakes([]);
     setSessionCorrect(0);
     setSessionTotal(0);
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
-
-    const duration = DURATIONS[mode];
-    setSecondsLeft(duration);
+    setSecondsLeft(DURATIONS[mode]);
     setPhase("practice");
 
     if (timerRef.current) clearInterval(timerRef.current);
@@ -214,8 +221,7 @@ export default function App() {
     const deduped = progress.mistakes.filter((p) => {
       const key = `${p.a}x${p.b}`;
       if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+      seen.add(key); return true;
     });
     setQueue(shuffle(deduped));
     setSessionMistakes([]);
@@ -228,32 +234,30 @@ export default function App() {
     setPhase("review");
   };
 
-  // ── Submit ─────────────────────────────────────────────────────────────────
+  // ── Submit / skip ──────────────────────────────────────────────────────────
 
   const pracSubmit = () => {
-    const answer = parseInt(pracInput.trim(), 10);
-    const pair = queue[0];
+    const answer   = parseInt(pracInput.trim(), 10);
+    const pair     = queue[0];
     const expected = pair.a * pair.b;
-    const correct = answer === expected;
+    const correct  = answer === expected;
 
     if (!correct) setSessionMistakes((m) => [...m, pair]);
     setSessionCorrect((c) => c + (correct ? 1 : 0));
     setSessionTotal((t) => t + 1);
 
-    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? "Review", a: pair.a, b: pair.b, answer_given: answer, correct });
+    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), a: pair.a, b: pair.b, answer_given: answer, correct });
     updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
     setPracFeedback({ correct, answer: expected });
     setPracPhase("feedback");
   };
-
-  // ── Skip ───────────────────────────────────────────────────────────────────
 
   const pracSkip = () => {
     const pair = queue[0];
     setSessionMistakes((m) => [...m, pair]);
     setSessionTotal((t) => t + 1);
 
-    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? "Review", a: pair.a, b: pair.b, answer_given: null, correct: false });
+    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), a: pair.a, b: pair.b, answer_given: null, correct: false });
     updateFactProgress(studentName ?? "", pair.a, pair.b, false);
     setPracFeedback({ correct: false, answer: pair.a * pair.b });
     setPracPhase("feedback");
@@ -262,23 +266,22 @@ export default function App() {
   // ── Next ───────────────────────────────────────────────────────────────────
 
   const pracNext = useCallback(() => {
-    const pair = queue[0];
+    const pair       = queue[0];
     const wasCorrect = pracFeedback?.correct ?? false;
+    const mode       = activeModeRef.current;
 
     let newQueue: Pair[];
+
     if (phase === "review" && !wasCorrect) {
+      // Review: re-queue wrong answers until correct
       newQueue = [...queue.slice(1), pair];
     } else {
       newQueue = queue.slice(1);
-      // 5-min: reshuffle when all unique facts seen
-      if (newQueue.length === 0 && phase === "practice" && activeModeRef.current === "5min") {
-        newQueue = buildFiveMinQueue(activeLessonRef.current!);
+      // 3-min only: cycle (pre-built 80-item queue; extend if somehow exhausted)
+      if (newQueue.length === 0 && phase === "practice" && mode === "3min") {
+        endSession(); return;
       }
-      // 3-min: extend queue (pre-built queue is large, but just in case)
-      if (newQueue.length === 0 && phase === "practice" && activeModeRef.current === "3min") {
-        endSession();
-        return;
-      }
+      // initial + 5-min: end when queue exhausted (all facts seen once)
     }
 
     if (newQueue.length === 0) {
@@ -302,12 +305,11 @@ export default function App() {
 
   const handleBack = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (phase === "practice" && sessionMistakes.length > 0) {
+    if (phase === "practice" && sessionMistakes.length > 0)
       setProgress((prev) => ({ mistakes: [...prev.mistakes, ...sessionMistakes] }));
-    }
     setSecondsLeft(null);
     isFinishingRef.current = false;
-    setPhase("lobby");
+    setPhase(initialDone ? "lobby" : "initial-welcome");
   };
 
   // ── Sign in ────────────────────────────────────────────────────────────────
@@ -315,31 +317,48 @@ export default function App() {
   const handleSignIn = async (name: string) => {
     saveStudentName(name);
     setStudentName(name);
+    const done = isInitialDone(name);
+    setInitialDone(done);
     const mistakes = await fetchMistakes(name);
     setProgress({ mistakes });
+    setPhase(done ? "lobby" : "initial-welcome");
   };
 
   const hasMistakes = progress.mistakes.length > 0;
 
   // ─── Auth gate ─────────────────────────────────────────────────────────────
 
-  if (!studentName) {
-    return <NameGate onSignIn={handleSignIn} />;
-  }
+  if (!studentName) return <NameGate onSignIn={handleSignIn} />;
 
   // ─── Render ────────────────────────────────────────────────────────────────
+
+  const signOut = () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    clearStudentName();
+    setStudentName(null);
+    setInitialDone(false);
+    setPhase("lobby");
+  };
 
   return (
     <div className="shell">
       <header className="site-header">
         <span className="logo">MultiAnki</span>
-        <button className="btn-signout" onClick={() => { clearStudentName(); setStudentName(null); setPhase("lobby"); if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } }}>
-          {studentName} ✕
-        </button>
+        <button className="btn-signout" onClick={signOut}>{studentName} ✕</button>
       </header>
 
+      {phase === "initial-welcome" && (
+        <InitialWelcomeView name={studentName} onStart={() => startSession(null, "initial")} />
+      )}
+
       {phase === "lobby" && (
-        <LobbyView hasMistakes={hasMistakes} mistakeCount={progress.mistakes.length} completedPretests={completedPretests} onSelectLesson={startLesson} onReview={startReview} />
+        <LobbyView
+          hasMistakes={hasMistakes}
+          mistakeCount={progress.mistakes.length}
+          completedPretests={completedPretests}
+          onSelectLesson={(lesson, mode) => startSession(lesson, mode)}
+          onReview={startReview}
+        />
       )}
 
       {phase === "loading" && (
@@ -348,8 +367,8 @@ export default function App() {
 
       {(phase === "practice" || phase === "review") && queue.length > 0 && (
         <PracticeView
-          label={phase === "review" ? "Review" : (activeLesson?.label ?? "")}
-          tag={phase === "review" ? `${queue.length} remaining` : (activeLesson?.tag ?? "")}
+          label={phase === "review" ? "Review" : activeMode === "initial" ? "Initial Test" : (activeLesson?.label ?? "")}
+          tag={phase === "review" ? `${queue.length} remaining` : activeMode === "initial" ? `${queue.length} remaining` : (activeLesson?.tag ?? "")}
           mode={activeMode}
           secondsLeft={secondsLeft}
           pair={queue[0]}
@@ -376,8 +395,8 @@ export default function App() {
 // ─── Name gate ────────────────────────────────────────────────────────────────
 
 function NameGate({ onSignIn }: { onSignIn: (name: string) => void }) {
-  const [input, setInput] = useState("");
-  const [error, setError] = useState(false);
+  const [input, setInput]   = useState("");
+  const [error, setError]   = useState(false);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
@@ -387,7 +406,7 @@ function NameGate({ onSignIn }: { onSignIn: (name: string) => void }) {
     setLoading(true); setError(false);
     const approved = await checkStudent(input);
     setLoading(false);
-    if (approved) { onSignIn(input.trim()); }
+    if (approved) onSignIn(input.trim());
     else { setError(true); setInput(""); inputRef.current?.focus(); }
   };
 
@@ -406,6 +425,24 @@ function NameGate({ onSignIn }: { onSignIn: (name: string) => void }) {
             {loading ? "Checking…" : "Continue"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Initial welcome ──────────────────────────────────────────────────────────
+
+function InitialWelcomeView({ name, onStart }: { name: string; onStart: () => void }) {
+  return (
+    <div className="card gate-card">
+      <p className="gate-heading">Welcome, {name}!</p>
+      <p className="gate-desc">
+        Before you start, we want to see what you already know.
+        You'll have 10 minutes to work through as many facts as you can.
+        There's no pressure — just do your best.
+      </p>
+      <div className="actions">
+        <button className="btn-primary" onClick={onStart}>Start</button>
       </div>
     </div>
   );
@@ -435,21 +472,13 @@ function LobbyView({ hasMistakes, mistakeCount, completedPretests, onSelectLesso
               <div className="lesson-btns">
                 {!pretestDone ? (
                   <>
-                    <button className="btn-lesson-mode btn-pretest" onClick={() => onSelectLesson(lesson, "5min")}>
-                      Pre-test
-                    </button>
-                    <button className="btn-lesson-mode btn-learn" onClick={() => onSelectLesson(lesson, "3min")}>
-                      Learn
-                    </button>
+                    <button className="btn-lesson-mode btn-pretest" onClick={() => onSelectLesson(lesson, "5min")}>Pre-test</button>
+                    <button className="btn-lesson-mode btn-learn"   onClick={() => onSelectLesson(lesson, "3min")}>Learn</button>
                   </>
                 ) : (
                   <>
-                    <button className="btn-lesson-mode btn-learn" onClick={() => onSelectLesson(lesson, "3min")}>
-                      Learn
-                    </button>
-                    <button className="btn-lesson-mode btn-quiz" disabled title="Coming soon">
-                      Quiz
-                    </button>
+                    <button className="btn-lesson-mode btn-learn" onClick={() => onSelectLesson(lesson, "3min")}>Learn</button>
+                    <button className="btn-lesson-mode btn-quiz"  disabled title="Coming soon">Quiz</button>
                   </>
                 )}
               </div>
@@ -469,20 +498,11 @@ function LobbyView({ hasMistakes, mistakeCount, completedPretests, onSelectLesso
 // ─── Practice ─────────────────────────────────────────────────────────────────
 
 function PracticeView({ label, tag, mode, secondsLeft, pair, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef }: {
-  label: string;
-  tag: string;
-  mode: SessionMode;
-  secondsLeft: number | null;
-  pair: Pair;
-  input: string;
-  onInput: (v: string) => void;
+  label: string; tag: string; mode: SessionMode; secondsLeft: number | null;
+  pair: Pair; input: string; onInput: (v: string) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
-  pracPhase: "question" | "feedback";
-  feedback: PracticeFeedback | null;
-  onSubmit: () => void;
-  onSkip: () => void;
-  onNext: () => void;
-  onBack: () => void;
+  pracPhase: "question" | "feedback"; feedback: PracticeFeedback | null;
+  onSubmit: () => void; onSkip: () => void; onNext: () => void; onBack: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
   return (
@@ -529,27 +549,34 @@ function PracticeView({ label, tag, mode, secondsLeft, pair, input, onInput, onK
 // ─── Session done ─────────────────────────────────────────────────────────────
 
 function SessionDoneView({ result, onContinue }: { result: SessionResult; onContinue: () => void }) {
-  const isReview = result.mode === "review";
-  const isThreeMin = result.mode === "3min";
+  const isInitial  = result.mode === "initial";
+  const isReview   = result.mode === "review";
+  const isLearn    = result.mode === "3min";
 
   return (
     <div className="card done-card">
-      <p className="done-headline">{isReview ? "Review done." : "Time's up."}</p>
+      <p className="done-headline">
+        {isInitial ? "All done." : isReview ? "Review done." : "Time's up."}
+      </p>
       <p className="done-stat">{result.correct} / {result.total} correct</p>
       <p className="done-detail">
-        {isReview
-          ? result.newMistakeCount === 0
-            ? "You got everything right."
-            : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} still need work.`
-          : isThreeMin
+        {isInitial
+          ? "Your lessons are ready. Start with any Pre-test below."
+          : isReview
             ? result.newMistakeCount === 0
-              ? "Great work — no new mistakes."
-              : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to keep working on.`
-            : result.newMistakeCount === 0
-              ? "Perfect — no mistakes."
-              : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to work on in Learn.`}
+              ? "You got everything right."
+              : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} still need work.`
+            : isLearn
+              ? result.newMistakeCount === 0
+                ? "Great — no new mistakes."
+                : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to keep working on.`
+              : result.newMistakeCount === 0
+                ? "Perfect — no mistakes."
+                : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to work on in Learn.`}
       </p>
-      <button className="btn-primary" onClick={onContinue}>Back to lessons</button>
+      <button className="btn-primary" onClick={onContinue}>
+        {isInitial ? "Go to lessons" : "Back to lessons"}
+      </button>
     </div>
   );
 }
