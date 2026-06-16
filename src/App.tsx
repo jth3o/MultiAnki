@@ -3,7 +3,7 @@ import {
   LESSONS, DURATIONS, buildFiveMinQueue, buildThreeMinQueue, shuffle,
   type Pair, type Lesson, type SessionMode, type FactStat,
 } from "./curriculum";
-import { checkStudent, logFact, logSession, fetchMistakes, fetchFactStats } from "./supabase";
+import { checkStudent, logFact, logSession, fetchMistakes, fetchFactStats, updateFactProgress } from "./supabase";
 import "./App.css";
 
 // ─── Name gate helpers ────────────────────────────────────────────────────────
@@ -219,6 +219,7 @@ export default function App() {
     setSessionTotal((t) => t + 1);
 
     logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? "Review", a: pair.a, b: pair.b, answer_given: answer, correct });
+    updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
     setPracFeedback({ correct, answer: expected });
     setPracPhase("feedback");
   };
@@ -231,6 +232,7 @@ export default function App() {
     setSessionTotal((t) => t + 1);
 
     logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? "Review", a: pair.a, b: pair.b, answer_given: null, correct: false });
+    updateFactProgress(studentName ?? "", pair.a, pair.b, false);
     setPracFeedback({ correct: false, answer: pair.a * pair.b });
     setPracPhase("feedback");
   };

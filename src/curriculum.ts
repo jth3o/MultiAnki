@@ -52,13 +52,16 @@ export interface FactStat {
   b: number;
   timesCorrect: number;
   timesWrong: number;
+  mastered: boolean;
 }
 
 function factWeight(stat: FactStat | undefined): number {
+  // Mastered facts appear rarely — just enough for retention
+  if (stat?.mastered) return 1;
   if (!stat) return 3; // unseen — moderate chance
   const { timesCorrect, timesWrong } = stat;
-  // Struggling facts get high weight; well-known facts fade to 1 (retention only)
-  return Math.max(1, 3 + timesWrong * 3 - timesCorrect * 2);
+  // Struggling facts get high weight; improving facts decrease toward 2
+  return Math.max(2, 3 + timesWrong * 3 - timesCorrect * 2);
 }
 
 function weightedPick(pairs: Pair[], stats: Map<string, FactStat>): Pair {

@@ -61,27 +61,58 @@ export interface FactStatRow {
   b: number;
   timesCorrect: number;
   timesWrong: number;
+  mastered: boolean;
 }
 
 export async function fetchFactStats(
   student_name: string,
   lesson: string
 ): Promise<FactStatRow[]> {
-  const { data, error } = await supabase
-    .from("facts")
-    .select("a, b, correct")
-    .eq("student_name", student_name)
-    .eq("lesson", lesson);
+  const [factsRes, progressRes] = await Promise.all([
+    supabase.from("facts").select("a, b, correct").eq("student_name", student_name).eq("lesson", lesson),
+    supabase.from("fact_progress").select("a, b, mastered").eq("student_name", student_name),
+  ]);
 
-  if (error || !data) return [];
+  const masteryMap = new Map<string, boolean>();
+  for (const row of progressRes.data ?? []) {
+    masteryMap.set(`${row.a}x${row.b}`, row.mastered);
+  }
 
   const map = new Map<string, FactStatRow>();
-  for (const row of data) {
+  for (const row of factsRes.data ?? []) {
     const key = `${row.a}x${row.b}`;
-    if (!map.has(key)) map.set(key, { a: row.a, b: row.b, timesCorrect: 0, timesWrong: 0 });
+    if (!map.has(key)) map.set(key, { a: row.a, b: row.b, timesCorrect: 0, timesWrong: 0, mastered: masteryMap.get(key) ?? false });
     const s = map.get(key)!;
     if (row.correct) s.timesCorrect++;
     else s.timesWrong++;
   }
   return Array.from(map.values());
+}
+
+// ─── Fact progress (streak + mastery) ────────────────────────────────────────
+
+const MASTERY_THRESHOLD = 5;
+
+export async function updateFactProgress(
+  student_name: string,
+  a: number,
+  b: number,
+  correct: boolean
+): Promise<void> {
+  const { data } = await supabase
+    .from("fact_progress")
+    .select("consecutive_correct, mastered")
+    .eq("student_name", student_name)
+    .eq("a", a)
+    .eq("b", b)
+    .maybeSingle();
+
+  const prev = data?.consecutive_correct ?? 0;
+  const newStreak = correct ? prev + 1 : 0;
+  const mastered = newStreak >= MASTERY_THRESHOLD;
+
+  await supabase.from("fact_progress").upsert(
+    { student_name, a, b, consecutive_correct: newStreak, mastered, updated_at: new Date().toISOString() },
+    { onConflict: "student_name,a,b" }
+  );
 }
