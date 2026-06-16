@@ -225,6 +225,38 @@
 
 .hm-mastered { color: #16a34a; font-weight: 600; }
 
+.hm-selected {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+  color: #374151;
+  background: #f0f4ff;
+  border: 1px solid #c7d9fd;
+  border-radius: 8px;
+  padding: 0.5rem 0.875rem;
+}
+
+.hm-selected-fact {
+  font-weight: 700;
+  color: #1a1a18;
+  font-size: 1rem;
+}
+
+.hm-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 0.875rem;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 0;
+}
+
+.hm-close:hover { color: #374151; }
+
 .hm-legend {
   display: flex;
   gap: 1rem;

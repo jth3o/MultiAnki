@@ -133,6 +133,7 @@ function buildClassStats(
 
 function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: string }) {
   const [mode, setMode] = useState<"accuracy" | "time">("accuracy");
+  const [selected, setSelected] = useState<{ a: number; b: number; stat: CellStat } | null>(null);
 
   return (
     <div className="heatmap-wrap">
@@ -161,7 +162,8 @@ function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: strin
                 <div
                   key={`${a}x${b}`}
                   className="hm-cell"
-                  style={{ background: cellColor(stat, mode), color: cellTextColor(stat, mode) }}
+                  style={{ background: cellColor(stat, mode), color: cellTextColor(stat, mode), cursor: total > 0 ? "pointer" : "default", outline: selected?.a === a && selected?.b === b ? "2px solid #2563eb" : "none" }}
+                  onClick={() => stat && total > 0 && setSelected(selected?.a === a && selected?.b === b ? null : { a, b, stat })}
                 >
                   {mode === "time" && avg !== null ? `${avg}s` : total > 0 ? `${a}×${b}` : ""}
                 </div>
@@ -170,6 +172,16 @@ function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: strin
           </>
         ))}
       </div>
+
+      {selected && (
+        <div className="hm-selected">
+          <span className="hm-selected-fact">{selected.a} × {selected.b} = {selected.a * selected.b}</span>
+          <span>{selected.stat.timesCorrect} correct / {selected.stat.timesCorrect + selected.stat.timesWrong} seen</span>
+          {avgTime(selected.stat) !== null && <span>avg {avgTime(selected.stat)}s per answer</span>}
+          {selected.stat.mastered && <span className="hm-mastered">✓ Mastered</span>}
+          <button className="hm-close" onClick={() => setSelected(null)}>✕</button>
+        </div>
+      )}
 
       <div className="hm-legend">
         {mode === "accuracy" ? (
