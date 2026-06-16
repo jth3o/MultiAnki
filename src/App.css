@@ -171,21 +171,42 @@ body {
 
 .btn-lesson-mode {
   flex: 1;
-  padding: 0.4rem 0;
+  padding: 0.5rem 0;
   font-size: 0.8125rem;
   font-family: var(--font);
-  font-weight: 500;
-  color: var(--accent);
-  background: #eff4ff;
-  border: 1px solid #c7d9fd;
-  border-radius: 6px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: opacity 0.15s, transform 0.1s;
 }
 
-.btn-lesson-mode:hover {
-  background: #dce9fd;
-  border-color: #a4c0fb;
+.btn-lesson-mode:hover:not(:disabled) {
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+.btn-lesson-mode:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Pre-test — warm amber */
+.btn-pretest {
+  background: #f59e0b;
+  color: #fff;
+}
+
+/* Learn — soft green */
+.btn-learn {
+  background: #34d399;
+  color: #fff;
+}
+
+/* Quiz — soft purple, coming soon */
+.btn-quiz {
+  background: #a78bfa;
+  color: #fff;
 }
 
 /* Loading */

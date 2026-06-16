@@ -13,6 +13,18 @@ function loadStudentName(): string | null { return localStorage.getItem(NAME_KEY
 function saveStudentName(n: string) { localStorage.setItem(NAME_KEY, n); }
 function clearStudentName() { localStorage.removeItem(NAME_KEY); }
 
+// ─── Pretest tracking ─────────────────────────────────────────────────────────
+
+const PRETEST_KEY = "multianki_pretests";
+function loadPretests(): Set<string> {
+  try { const r = localStorage.getItem(PRETEST_KEY); if (r) return new Set(JSON.parse(r)); }
+  catch { /* ignore */ }
+  return new Set();
+}
+function savePretests(s: Set<string>) {
+  localStorage.setItem(PRETEST_KEY, JSON.stringify([...s]));
+}
+
 // ─── Progress (local mistake cache) ───────────────────────────────────────────
 
 interface Progress { mistakes: Pair[]; }
@@ -52,6 +64,7 @@ interface SessionResult {
 export default function App() {
   const [studentName, setStudentName] = useState<string | null>(loadStudentName);
   const [progress, setProgress] = useState<Progress>(loadProgress);
+  const [completedPretests, setCompletedPretests] = useState<Set<string>>(loadPretests);
   const [phase, setPhase] = useState<AppPhase>("lobby");
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [activeMode, setActiveMode] = useState<SessionMode>("5min");
@@ -120,6 +133,15 @@ export default function App() {
 
     if (currentPhase === "practice") {
       setProgress((prev) => ({ mistakes: [...prev.mistakes, ...mistakes] }));
+      // Mark pretest done if this was a 5-min session
+      if (mode === "5min" && lesson) {
+        setCompletedPretests((prev) => {
+          const next = new Set(prev);
+          next.add(lesson.id);
+          savePretests(next);
+          return next;
+        });
+      }
     } else {
       // review: remove cleared mistakes
       setProgress((prev) => ({
@@ -317,7 +339,7 @@ export default function App() {
       </header>
 
       {phase === "lobby" && (
-        <LobbyView hasMistakes={hasMistakes} mistakeCount={progress.mistakes.length} onSelectLesson={startLesson} onReview={startReview} />
+        <LobbyView hasMistakes={hasMistakes} mistakeCount={progress.mistakes.length} completedPretests={completedPretests} onSelectLesson={startLesson} onReview={startReview} />
       )}
 
       {phase === "loading" && (
@@ -391,9 +413,10 @@ function NameGate({ onSignIn }: { onSignIn: (name: string) => void }) {
 
 // ─── Lobby ────────────────────────────────────────────────────────────────────
 
-function LobbyView({ hasMistakes, mistakeCount, onSelectLesson, onReview }: {
+function LobbyView({ hasMistakes, mistakeCount, completedPretests, onSelectLesson, onReview }: {
   hasMistakes: boolean;
   mistakeCount: number;
+  completedPretests: Set<string>;
   onSelectLesson: (lesson: Lesson, mode: SessionMode) => void;
   onReview: () => void;
 }) {
@@ -401,22 +424,38 @@ function LobbyView({ hasMistakes, mistakeCount, onSelectLesson, onReview }: {
     <div className="lobby">
       <p className="lobby-heading">Choose a lesson</p>
       <div className="lesson-grid">
-        {LESSONS.map((lesson) => (
-          <div key={lesson.id} className="lesson-card">
-            <div className="lesson-info">
-              <span className="lesson-label">{lesson.label}</span>
-              <span className="lesson-tag">{lesson.tag}</span>
+        {LESSONS.map((lesson) => {
+          const pretestDone = completedPretests.has(lesson.id);
+          return (
+            <div key={lesson.id} className="lesson-card">
+              <div className="lesson-info">
+                <span className="lesson-label">{lesson.label}</span>
+                <span className="lesson-tag">{lesson.tag}</span>
+              </div>
+              <div className="lesson-btns">
+                {!pretestDone ? (
+                  <>
+                    <button className="btn-lesson-mode btn-pretest" onClick={() => onSelectLesson(lesson, "5min")}>
+                      Pre-test
+                    </button>
+                    <button className="btn-lesson-mode btn-learn" onClick={() => onSelectLesson(lesson, "3min")}>
+                      Learn
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button className="btn-lesson-mode btn-learn" onClick={() => onSelectLesson(lesson, "3min")}>
+                      Learn
+                    </button>
+                    <button className="btn-lesson-mode btn-quiz" disabled title="Coming soon">
+                      Quiz
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="lesson-btns">
-              <button className="btn-lesson-mode" onClick={() => onSelectLesson(lesson, "5min")}>
-                5 min
-              </button>
-              <button className="btn-lesson-mode" onClick={() => onSelectLesson(lesson, "3min")}>
-                3 min
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <button className={`btn-review ${hasMistakes ? "" : "disabled"}`} onClick={onReview} disabled={!hasMistakes}>
@@ -508,7 +547,7 @@ function SessionDoneView({ result, onContinue }: { result: SessionResult; onCont
               : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to keep working on.`
             : result.newMistakeCount === 0
               ? "Perfect — no mistakes."
-              : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to review in the 3-minute session.`}
+              : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to work on in Learn.`}
       </p>
       <button className="btn-primary" onClick={onContinue}>Back to lessons</button>
     </div>
