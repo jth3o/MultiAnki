@@ -53,3 +53,35 @@ export async function fetchMistakes(student_name: string): Promise<{ a: number; 
   if (error || !data) return [];
   return data.map((r) => ({ a: r.a, b: r.b }));
 }
+
+// ─── Fact stats (for weighted 3-min queue) ────────────────────────────────────
+
+export interface FactStatRow {
+  a: number;
+  b: number;
+  timesCorrect: number;
+  timesWrong: number;
+}
+
+export async function fetchFactStats(
+  student_name: string,
+  lesson: string
+): Promise<FactStatRow[]> {
+  const { data, error } = await supabase
+    .from("facts")
+    .select("a, b, correct")
+    .eq("student_name", student_name)
+    .eq("lesson", lesson);
+
+  if (error || !data) return [];
+
+  const map = new Map<string, FactStatRow>();
+  for (const row of data) {
+    const key = `${row.a}x${row.b}`;
+    if (!map.has(key)) map.set(key, { a: row.a, b: row.b, timesCorrect: 0, timesWrong: 0 });
+    const s = map.get(key)!;
+    if (row.correct) s.timesCorrect++;
+    else s.timesWrong++;
+  }
+  return Array.from(map.values());
+}
