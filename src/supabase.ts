@@ -31,6 +31,7 @@ export async function logFact(payload: {
   b: number;
   answer_given: number | null;
   correct: boolean;
+  time_seconds: number;
 }) {
   const { a, b } = norm(payload.a, payload.b);
   await supabase.from("facts").insert({ ...payload, a, b });
@@ -117,6 +118,7 @@ export interface TeacherFactRecord {
   a: number;
   b: number;
   correct: boolean;
+  time_seconds: number | null;
 }
 
 export interface TeacherSession {
@@ -139,7 +141,7 @@ export async function fetchAllFactProgress(): Promise<TeacherFactProgress[]> {
 }
 
 export async function fetchAllFacts(): Promise<TeacherFactRecord[]> {
-  const { data } = await supabase.from("facts").select("student_name, a, b, correct");
+  const { data } = await supabase.from("facts").select("student_name, a, b, correct, time_seconds");
   return data ?? [];
 }
 

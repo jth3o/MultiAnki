@@ -86,9 +86,10 @@ export default function App() {
   const [secondsLeft, setSecondsLeft]         = useState<number | null>(null);
   const [sessionResult, setSessionResult]     = useState<SessionResult | null>(null);
 
-  const inputRef   = useRef<HTMLInputElement>(null);
-  const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isFinishingRef = useRef(false);
+  const inputRef        = useRef<HTMLInputElement>(null);
+  const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isFinishingRef  = useRef(false);
+  const questionStartRef = useRef<number>(Date.now());
 
   // Stable refs for timer/endSession callback
   const sessionMistakesRef = useRef<Pair[]>([]);
@@ -109,8 +110,10 @@ export default function App() {
   useEffect(() => { saveProgress(progress); },                         [progress]);
 
   useEffect(() => {
-    if ((phase === "practice" || phase === "review") && pracPhase === "question")
+    if ((phase === "practice" || phase === "review") && pracPhase === "question") {
       inputRef.current?.focus();
+      questionStartRef.current = Date.now();
+    }
   }, [phase, pracPhase, queue]);
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
@@ -258,7 +261,8 @@ export default function App() {
     setSessionCorrect((c) => c + (correct ? 1 : 0));
     setSessionTotal((t) => t + 1);
 
-    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), a: pair.a, b: pair.b, answer_given: answer, correct });
+    const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
+    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), a: pair.a, b: pair.b, answer_given: answer, correct, time_seconds: elapsed });
     updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
     setPracFeedback({ correct, answer: expected });
     setPracPhase("feedback");
@@ -269,7 +273,8 @@ export default function App() {
     setSessionMistakes((m) => [...m, pair]);
     setSessionTotal((t) => t + 1);
 
-    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), a: pair.a, b: pair.b, answer_given: null, correct: false });
+    const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
+    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: elapsed });
     updateFactProgress(studentName ?? "", pair.a, pair.b, false);
     setPracFeedback({ correct: false, answer: pair.a * pair.b });
     setPracPhase("feedback");

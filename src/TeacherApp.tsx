@@ -18,10 +18,26 @@ interface CellStat {
   timesCorrect: number;
   timesWrong: number;
   mastered: boolean;
+  totalTime: number;   // sum of time_seconds
+  timeCount: number;   // number of timed entries
 }
 
-function cellColor(stat: CellStat | undefined): string {
+function avgTime(stat: CellStat): number | null {
+  return stat.timeCount > 0 ? Math.round(stat.totalTime / stat.timeCount) : null;
+}
+
+function cellColor(stat: CellStat | undefined, mode: "accuracy" | "time"): string {
   if (!stat || stat.timesCorrect + stat.timesWrong === 0) return "#f3f4f6";
+
+  if (mode === "time") {
+    const avg = avgTime(stat);
+    if (avg === null) return "#f3f4f6";
+    if (avg <= 3)  return "#16a34a"; // fast
+    if (avg <= 6)  return "#86efac"; // ok
+    if (avg <= 10) return "#fde68a"; // slow
+    return "#fca5a5";                // very slow
+  }
+
   if (stat.mastered) return "#16a34a";
   const acc = stat.timesCorrect / (stat.timesCorrect + stat.timesWrong);
   if (acc < 0.4) return "#fca5a5";
@@ -29,7 +45,11 @@ function cellColor(stat: CellStat | undefined): string {
   return "#86efac";
 }
 
-function cellTextColor(stat: CellStat | undefined): string {
+function cellTextColor(stat: CellStat | undefined, mode: "accuracy" | "time"): string {
+  if (mode === "time") {
+    const avg = stat ? avgTime(stat) : null;
+    return avg !== null && avg <= 3 ? "#fff" : "#374151";
+  }
   if (stat?.mastered) return "#fff";
   return "#374151";
 }
@@ -47,6 +67,10 @@ function relativeTime(iso: string): string {
 
 // ─── Build per-student stats map ──────────────────────────────────────────────
 
+function emptyCell(): CellStat {
+  return { timesCorrect: 0, timesWrong: 0, mastered: false, totalTime: 0, timeCount: 0 };
+}
+
 function buildStudentStats(
   facts: TeacherFactRecord[],
   progress: TeacherFactProgress[],
@@ -56,49 +80,50 @@ function buildStudentStats(
 
   for (const f of facts.filter((f) => f.student_name === studentName)) {
     const key = normKey(f.a, f.b);
-    if (!map.has(key)) map.set(key, { timesCorrect: 0, timesWrong: 0, mastered: false });
+    if (!map.has(key)) map.set(key, emptyCell());
     const s = map.get(key)!;
     if (f.correct) s.timesCorrect++; else s.timesWrong++;
+    if (f.time_seconds != null) { s.totalTime += f.time_seconds; s.timeCount++; }
   }
 
   for (const p of progress.filter((p) => p.student_name === studentName)) {
     const key = normKey(p.a, p.b);
-    if (!map.has(key)) map.set(key, { timesCorrect: 0, timesWrong: 0, mastered: false });
+    if (!map.has(key)) map.set(key, emptyCell());
     map.get(key)!.mastered = p.mastered;
   }
 
   return map;
 }
 
-// Build class-wide stats (aggregate across all students)
 function buildClassStats(
   facts: TeacherFactRecord[],
   progress: TeacherFactProgress[],
   students: string[]
 ): Map<string, CellStat> {
-  // For class view: average accuracy + % mastered
-  const totals = new Map<string, { correct: number; wrong: number; masteredCount: number }>();
+  const totals = new Map<string, { correct: number; wrong: number; masteredCount: number; totalTime: number; timeCount: number }>();
 
   for (const f of facts) {
     const key = normKey(f.a, f.b);
-    if (!totals.has(key)) totals.set(key, { correct: 0, wrong: 0, masteredCount: 0 });
+    if (!totals.has(key)) totals.set(key, { correct: 0, wrong: 0, masteredCount: 0, totalTime: 0, timeCount: 0 });
     const t = totals.get(key)!;
     if (f.correct) t.correct++; else t.wrong++;
+    if (f.time_seconds != null) { t.totalTime += f.time_seconds; t.timeCount++; }
   }
 
   for (const p of progress) {
     const key = normKey(p.a, p.b);
-    if (!totals.has(key)) totals.set(key, { correct: 0, wrong: 0, masteredCount: 0 });
+    if (!totals.has(key)) totals.set(key, { correct: 0, wrong: 0, masteredCount: 0, totalTime: 0, timeCount: 0 });
     if (p.mastered) totals.get(key)!.masteredCount++;
   }
 
   const result = new Map<string, CellStat>();
   for (const [key, t] of totals) {
-    const masteredByMost = t.masteredCount >= Math.ceil(students.length / 2);
     result.set(key, {
       timesCorrect: t.correct,
       timesWrong: t.wrong,
-      mastered: masteredByMost,
+      mastered: t.masteredCount >= Math.ceil(students.length / 2),
+      totalTime: t.totalTime,
+      timeCount: t.timeCount,
     });
   }
   return result;
@@ -108,17 +133,23 @@ function buildClassStats(
 
 function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: string }) {
   const [tooltip, setTooltip] = useState<{ a: number; b: number; stat: CellStat } | null>(null);
+  const [mode, setMode] = useState<"accuracy" | "time">("accuracy");
 
   return (
     <div className="heatmap-wrap">
-      {title && <p className="heatmap-title">{title}</p>}
+      <div className="heatmap-header">
+        {title && <p className="heatmap-title">{title}</p>}
+        <div className="hm-toggle">
+          <button className={mode === "accuracy" ? "active" : ""} onClick={() => setMode("accuracy")}>Accuracy</button>
+          <button className={mode === "time" ? "active" : ""} onClick={() => setMode("time")}>Time</button>
+        </div>
+      </div>
+
       <div className="heatmap-grid">
-        {/* Column headers */}
         <div className="hm-corner" />
         {Array.from({ length: 12 }, (_, i) => (
           <div key={i} className="hm-header">{i + 1}</div>
         ))}
-        {/* Rows */}
         {Array.from({ length: 12 }, (_, ai) => (
           <>
             <div key={`r${ai}`} className="hm-header">{ai + 1}</div>
@@ -126,15 +157,16 @@ function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: strin
               const a = ai + 1, b = bi + 1;
               const stat = stats.get(normKey(a, b));
               const total = stat ? stat.timesCorrect + stat.timesWrong : 0;
+              const avg = stat ? avgTime(stat) : null;
               return (
                 <div
                   key={`${a}x${b}`}
                   className="hm-cell"
-                  style={{ background: cellColor(stat), color: cellTextColor(stat) }}
-                  onMouseEnter={() => stat && setTooltip({ a, b, stat })}
+                  style={{ background: cellColor(stat, mode), color: cellTextColor(stat, mode) }}
+                  onMouseEnter={() => stat && total > 0 && setTooltip({ a, b, stat })}
                   onMouseLeave={() => setTooltip(null)}
                 >
-                  {total > 0 ? `${a}×${b}` : ""}
+                  {mode === "time" && avg !== null ? `${avg}s` : total > 0 ? `${a}×${b}` : ""}
                 </div>
               );
             })}
@@ -146,16 +178,29 @@ function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: strin
         <div className="hm-tooltip">
           <strong>{tooltip.a} × {tooltip.b}</strong>
           <span>{tooltip.stat.timesCorrect} correct / {tooltip.stat.timesCorrect + tooltip.stat.timesWrong} seen</span>
+          {avgTime(tooltip.stat) !== null && <span>avg {avgTime(tooltip.stat)}s</span>}
           {tooltip.stat.mastered && <span className="hm-mastered">✓ Mastered</span>}
         </div>
       )}
 
       <div className="hm-legend">
-        <span><span className="legend-dot" style={{ background: "#f3f4f6" }} />Not seen</span>
-        <span><span className="legend-dot" style={{ background: "#fca5a5" }} />Struggling</span>
-        <span><span className="legend-dot" style={{ background: "#fde68a" }} />In progress</span>
-        <span><span className="legend-dot" style={{ background: "#86efac" }} />Doing well</span>
-        <span><span className="legend-dot" style={{ background: "#16a34a" }} />Mastered</span>
+        {mode === "accuracy" ? (
+          <>
+            <span><span className="legend-dot" style={{ background: "#f3f4f6" }} />Not seen</span>
+            <span><span className="legend-dot" style={{ background: "#fca5a5" }} />Struggling</span>
+            <span><span className="legend-dot" style={{ background: "#fde68a" }} />In progress</span>
+            <span><span className="legend-dot" style={{ background: "#86efac" }} />Doing well</span>
+            <span><span className="legend-dot" style={{ background: "#16a34a" }} />Mastered</span>
+          </>
+        ) : (
+          <>
+            <span><span className="legend-dot" style={{ background: "#f3f4f6" }} />Not seen</span>
+            <span><span className="legend-dot" style={{ background: "#16a34a" }} />≤3s (fast)</span>
+            <span><span className="legend-dot" style={{ background: "#86efac" }} />4–6s</span>
+            <span><span className="legend-dot" style={{ background: "#fde68a" }} />7–10s</span>
+            <span><span className="legend-dot" style={{ background: "#fca5a5" }} />&gt;10s (slow)</span>
+          </>
+        )}
       </div>
     </div>
   );

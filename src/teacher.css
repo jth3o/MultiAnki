@@ -138,6 +138,37 @@
   margin-bottom: 2.5rem;
 }
 
+.heatmap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.hm-toggle {
+  display: flex;
+  border: 1px solid #e2e0dc;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.hm-toggle button {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  font-weight: 500;
+  background: #fff;
+  border: none;
+  cursor: pointer;
+  color: #6b6b68;
+  transition: background 0.15s, color 0.15s;
+}
+
+.hm-toggle button.active {
+  background: #2563eb;
+  color: #fff;
+}
+
 .heatmap-title {
   font-size: 0.875rem;
   font-weight: 600;
