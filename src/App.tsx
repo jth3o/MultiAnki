@@ -260,7 +260,7 @@ function LobbyView({
         onClick={onReview}
         disabled={!hasMistakes}
       >
-        Review mistakes
+        Review
         {hasMistakes && (
           <span className="review-count">{mistakeCount}</span>
         )}
