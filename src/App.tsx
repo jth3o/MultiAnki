@@ -285,7 +285,6 @@ export default function App() {
 
       {phase === "lobby" && (
         <LobbyView
-          progress={progress}
           stage={currentStage}
           onBegin={beginSession}
         />
@@ -332,11 +331,9 @@ export default function App() {
 // ─── Sub-views ────────────────────────────────────────────────────────────────
 
 function LobbyView({
-  progress,
   stage,
   onBegin,
 }: {
-  progress: Progress;
   stage: Stage;
   onBegin: () => void;
 }) {
