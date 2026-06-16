@@ -48,6 +48,9 @@ body {
 /* ── Header ─────────────────────────────────────────────────────────────── */
 
 .site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 1.5rem 0 1.5rem;
 }
 
@@ -55,6 +58,46 @@ body {
   font-size: 1.125rem;
   font-weight: 600;
   letter-spacing: -0.01em;
+}
+
+.btn-signout {
+  font-size: 0.8125rem;
+  font-family: var(--font);
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.btn-signout:hover {
+  color: var(--text);
+}
+
+/* ── Name gate ───────────────────────────────────────────────────────────── */
+
+.gate-card {
+  margin-top: 2rem;
+}
+
+.gate-heading {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.gate-input {
+  max-width: 240px;
+  font-size: 1rem;
+  text-align: left;
+  padding-left: 1rem;
+}
+
+.gate-error {
+  font-size: 0.875rem;
+  color: var(--incorrect);
+  text-align: center;
 }
 
 /* ── Card ────────────────────────────────────────────────────────────────── */

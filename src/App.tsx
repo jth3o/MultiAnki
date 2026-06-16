@@ -1,6 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { LESSONS, factsForLesson, shuffle, type Pair, type Lesson } from "./curriculum";
+import { isApproved, normalizeName } from "./students";
 import "./App.css";
+
+// ─── Name gate ────────────────────────────────────────────────────────────────
+
+const NAME_KEY = "multianki_student";
+
+function loadStudentName(): string | null {
+  return localStorage.getItem(NAME_KEY);
+}
+
+function saveStudentName(name: string) {
+  localStorage.setItem(NAME_KEY, name);
+}
+
+function clearStudentName() {
+  localStorage.removeItem(NAME_KEY);
+}
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
@@ -45,6 +62,7 @@ interface SessionResult {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const [studentName, setStudentName] = useState<string | null>(loadStudentName);
   const [progress, setProgress] = useState<Progress>(loadProgress);
   const [phase, setPhase] = useState<AppPhase>("lobby");
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
@@ -181,12 +199,30 @@ export default function App() {
 
   const hasMistakes = progress.mistakes.length > 0;
 
+  const handleSignIn = (name: string) => {
+    saveStudentName(name);
+    setStudentName(name);
+  };
+
+  const handleSignOut = () => {
+    clearStudentName();
+    setStudentName(null);
+    setPhase("lobby");
+  };
+
   // ─── Render ────────────────────────────────────────────────────────────────
+
+  if (!studentName) {
+    return <NameGate onSignIn={handleSignIn} />;
+  }
 
   return (
     <div className="shell">
       <header className="site-header">
         <span className="logo">MultiAnki</span>
+        <button className="btn-signout" onClick={handleSignOut}>
+          {studentName} ✕
+        </button>
       </header>
 
       {phase === "lobby" && (
@@ -222,6 +258,60 @@ export default function App() {
           onContinue={() => setPhase("lobby")}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Name gate ────────────────────────────────────────────────────────────────
+
+function NameGate({ onSignIn }: { onSignIn: (name: string) => void }) {
+  const [input, setInput] = useState("");
+  const [error, setError] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const attempt = () => {
+    if (isApproved(input)) {
+      setError(false);
+      onSignIn(normalizeName(input));
+    } else {
+      setError(true);
+      setInput("");
+      inputRef.current?.focus();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && input.trim()) attempt();
+  };
+
+  return (
+    <div className="shell">
+      <header className="site-header">
+        <span className="logo">MultiAnki</span>
+      </header>
+      <div className="card gate-card">
+        <p className="gate-heading">What's your name?</p>
+        <input
+          ref={inputRef}
+          className="answer-input gate-input"
+          type="text"
+          value={input}
+          onChange={(e) => { setInput(e.target.value); setError(false); }}
+          onKeyDown={handleKeyDown}
+          placeholder="your name"
+          autoComplete="off"
+        />
+        {error && (
+          <p className="gate-error">Name not recognised. Check with your teacher.</p>
+        )}
+        <div className="actions">
+          <button className="btn-primary" onClick={attempt} disabled={!input.trim()}>
+            Continue
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
