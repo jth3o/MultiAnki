@@ -27,6 +27,7 @@ export async function checkStudent(name: string): Promise<boolean> {
 export async function logFact(payload: {
   student_name: string;
   lesson: string;
+  session_mode: string;
   a: number;
   b: number;
   answer_given: number | null;
@@ -119,6 +120,7 @@ export interface TeacherFactRecord {
   b: number;
   correct: boolean;
   time_seconds: number | null;
+  session_mode: string | null;
 }
 
 export interface TeacherSession {
@@ -141,7 +143,7 @@ export async function fetchAllFactProgress(): Promise<TeacherFactProgress[]> {
 }
 
 export async function fetchAllFacts(): Promise<TeacherFactRecord[]> {
-  const { data } = await supabase.from("facts").select("student_name, a, b, correct, time_seconds");
+  const { data } = await supabase.from("facts").select("student_name, a, b, correct, time_seconds, session_mode");
   return data ?? [];
 }
 

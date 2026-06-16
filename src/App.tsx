@@ -262,7 +262,8 @@ export default function App() {
     setSessionTotal((t) => t + 1);
 
     const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
-    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), a: pair.a, b: pair.b, answer_given: answer, correct, time_seconds: elapsed });
+    const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
+    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: answer, correct, time_seconds: elapsed });
     updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
     setPracFeedback({ correct, answer: expected });
     setPracPhase("feedback");
@@ -274,7 +275,8 @@ export default function App() {
     setSessionTotal((t) => t + 1);
 
     const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
-    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: elapsed });
+    const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
+    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: elapsed });
     updateFactProgress(studentName ?? "", pair.a, pair.b, false);
     setPracFeedback({ correct: false, answer: pair.a * pair.b });
     setPracPhase("feedback");

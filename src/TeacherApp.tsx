@@ -131,9 +131,33 @@ function buildClassStats(
 
 // ─── Heatmap ──────────────────────────────────────────────────────────────────
 
-function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: string }) {
+type SessionFilter = "all" | "initial" | "5min" | "3min" | "quiz";
+
+const SESSION_FILTERS: { key: SessionFilter; label: string; disabled?: boolean }[] = [
+  { key: "all",     label: "All" },
+  { key: "initial", label: "Initial test" },
+  { key: "5min",    label: "Pre-test" },
+  { key: "3min",    label: "Learn" },
+  { key: "quiz",    label: "Quiz", disabled: true },
+];
+
+function Heatmap({ facts, progress, studentName, title }: {
+  facts: TeacherFactRecord[];
+  progress: TeacherFactProgress[];
+  studentName?: string;
+  title?: string;
+}) {
   const [mode, setMode] = useState<"accuracy" | "time">("accuracy");
+  const [filter, setFilter] = useState<SessionFilter>("all");
   const [selected, setSelected] = useState<{ a: number; b: number; stat: CellStat } | null>(null);
+
+  const filteredFacts = filter === "all"
+    ? facts
+    : facts.filter((f) => f.session_mode === filter);
+
+  const stats = studentName
+    ? buildStudentStats(filteredFacts, progress, studentName)
+    : buildClassStats(filteredFacts, progress, [...new Set(facts.map((f) => f.student_name))]);
 
   return (
     <div className="heatmap-wrap">
@@ -143,6 +167,19 @@ function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: strin
           <button className={mode === "accuracy" ? "active" : ""} onClick={() => setMode("accuracy")}>Accuracy</button>
           <button className={mode === "time" ? "active" : ""} onClick={() => setMode("time")}>Time</button>
         </div>
+      </div>
+
+      <div className="hm-filters">
+        {SESSION_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            className={`hm-filter-pill ${filter === f.key ? "active" : ""}`}
+            onClick={() => { if (!f.disabled) { setFilter(f.key); setSelected(null); } }}
+            disabled={f.disabled}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
       <div className="heatmap-grid">
@@ -217,9 +254,9 @@ function StudentDetail({
   sessions: TeacherSession[];
   onBack: () => void;
 }) {
-  const stats = buildStudentStats(facts, progress, student.name);
-  const masteredCount = [...stats.values()].filter((s) => s.mastered).length;
-  const totalSeen = [...stats.values()].filter((s) => s.timesCorrect + s.timesWrong > 0).length;
+  const allStats = buildStudentStats(facts, progress, student.name);
+  const masteredCount = [...allStats.values()].filter((s) => s.mastered).length;
+  const totalSeen = [...allStats.values()].filter((s) => s.timesCorrect + s.timesWrong > 0).length;
   const studentSessions = sessions.filter((s) => s.student_name === student.name).slice(0, 10);
 
   return (
@@ -247,7 +284,7 @@ function StudentDetail({
         </div>
       </div>
 
-      <Heatmap stats={stats} title="Fact performance" />
+      <Heatmap facts={facts.filter(f => f.student_name === student.name)} progress={progress} studentName={student.name} title="Fact performance" />
 
       <div className="sessions-section">
         <p className="section-title">Recent sessions</p>
@@ -299,15 +336,13 @@ function Dashboard({
     );
   }
 
-  const classStats = buildClassStats(facts, progress, students.map((s) => s.name));
-
   return (
     <div className="teacher-shell">
       <header className="teacher-header">
         <span className="teacher-logo">MultiAnki — Teacher</span>
       </header>
 
-      <Heatmap stats={classStats} title="Class overview — fact performance across all students" />
+      <Heatmap facts={facts} progress={progress} title="Class overview — fact performance across all students" />
 
       <div className="students-section">
         <p className="section-title">Students</p>
@@ -323,6 +358,7 @@ function Dashboard({
           <tbody>
             {students.map((student) => {
               const stats = buildStudentStats(facts, progress, student.name);
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const mastered = [...stats.values()].filter((s) => s.mastered).length;
               const seen = [...stats.values()].filter((s) => s.timesCorrect + s.timesWrong > 0).length;
               const lastSession = sessions.find((s) => s.student_name === student.name);

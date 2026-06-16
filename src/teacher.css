@@ -178,6 +178,42 @@
   margin-bottom: 0.75rem;
 }
 
+.hm-filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.hm-filter-pill {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  font-weight: 500;
+  background: #f3f4f6;
+  border: 1px solid #e2e0dc;
+  border-radius: 999px;
+  cursor: pointer;
+  color: #6b6b68;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.hm-filter-pill:hover:not(:disabled) {
+  background: #e5e7eb;
+  color: #1a1a18;
+}
+
+.hm-filter-pill.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.hm-filter-pill:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .heatmap-grid {
   display: grid;
   grid-template-columns: 1.5rem repeat(12, 1fr);
