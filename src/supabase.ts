@@ -32,7 +32,7 @@ export async function logFact(payload: {
   b: number;
   answer_given: number | null;
   correct: boolean;
-  time_seconds: number;
+  time_seconds: number | null;
 }) {
   const { a, b } = norm(payload.a, payload.b);
   await supabase.from("facts").insert({ ...payload, a, b });
