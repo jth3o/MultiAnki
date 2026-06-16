@@ -132,7 +132,6 @@ function buildClassStats(
 // ─── Heatmap ──────────────────────────────────────────────────────────────────
 
 function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: string }) {
-  const [tooltip, setTooltip] = useState<{ a: number; b: number; stat: CellStat } | null>(null);
   const [mode, setMode] = useState<"accuracy" | "time">("accuracy");
 
   return (
@@ -163,8 +162,6 @@ function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: strin
                   key={`${a}x${b}`}
                   className="hm-cell"
                   style={{ background: cellColor(stat, mode), color: cellTextColor(stat, mode) }}
-                  onMouseEnter={() => stat && total > 0 && setTooltip({ a, b, stat })}
-                  onMouseLeave={() => setTooltip(null)}
                 >
                   {mode === "time" && avg !== null ? `${avg}s` : total > 0 ? `${a}×${b}` : ""}
                 </div>
@@ -173,15 +170,6 @@ function Heatmap({ stats, title }: { stats: Map<string, CellStat>; title?: strin
           </>
         ))}
       </div>
-
-      {tooltip && (
-        <div className="hm-tooltip">
-          <strong>{tooltip.a} × {tooltip.b}</strong>
-          <span>{tooltip.stat.timesCorrect} correct / {tooltip.stat.timesCorrect + tooltip.stat.timesWrong} seen</span>
-          {avgTime(tooltip.stat) !== null && <span>avg {avgTime(tooltip.stat)}s</span>}
-          {tooltip.stat.mastered && <span className="hm-mastered">✓ Mastered</span>}
-        </div>
-      )}
 
       <div className="hm-legend">
         {mode === "accuracy" ? (
