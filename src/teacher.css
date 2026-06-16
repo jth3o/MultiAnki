@@ -1,0 +1,311 @@
+/* ── Teacher shell ───────────────────────────────────────────────────────── */
+
+.teacher-shell {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+  font-family: "Inter", system-ui, sans-serif;
+  color: #1a1a18;
+}
+
+.teacher-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid #e2e0dc;
+  margin-bottom: 2rem;
+}
+
+.teacher-logo {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a1a18;
+}
+
+.btn-back-teacher {
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: #6b6b68;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.btn-back-teacher:hover { color: #1a1a18; }
+
+/* ── Gate ────────────────────────────────────────────────────────────────── */
+
+.teacher-gate {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f9f8f6;
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.teacher-gate-card {
+  background: #fff;
+  border: 1px solid #e2e0dc;
+  border-radius: 12px;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 280px;
+}
+
+.teacher-gate-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.teacher-input {
+  padding: 0.625rem 0.875rem;
+  font-size: 0.9375rem;
+  font-family: inherit;
+  border: 1.5px solid #e2e0dc;
+  border-radius: 8px;
+  outline: none;
+}
+
+.teacher-input:focus { border-color: #2563eb; }
+
+.teacher-gate-error {
+  font-size: 0.8125rem;
+  color: #dc2626;
+}
+
+.teacher-btn {
+  padding: 0.625rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.teacher-btn:hover { background: #1d4ed8; }
+
+.teacher-loading {
+  font-size: 1rem;
+  color: #6b6b68;
+}
+
+/* ── Student detail hero ─────────────────────────────────────────────────── */
+
+.detail-hero {
+  margin-bottom: 2rem;
+}
+
+.detail-name {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 1rem;
+}
+
+.detail-stats {
+  display: flex;
+  gap: 2rem;
+}
+
+.detail-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.ds-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a1a18;
+}
+
+.ds-label {
+  font-size: 0.8125rem;
+  color: #6b6b68;
+}
+
+/* ── Heatmap ─────────────────────────────────────────────────────────────── */
+
+.heatmap-wrap {
+  margin-bottom: 2.5rem;
+}
+
+.heatmap-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #6b6b68;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: 1.5rem repeat(12, 1fr);
+  gap: 3px;
+  width: 100%;
+}
+
+.hm-corner { width: 1.5rem; }
+
+.hm-header {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #9ca3af;
+  text-align: center;
+  line-height: 1.5rem;
+  width: 1.5rem;
+}
+
+.hm-cell {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  font-size: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  transition: opacity 0.1s;
+  font-weight: 500;
+}
+
+.hm-cell:hover { opacity: 0.75; }
+
+.hm-tooltip {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  font-size: 0.875rem;
+  color: #374151;
+  background: #f9f8f6;
+  border: 1px solid #e2e0dc;
+  border-radius: 8px;
+  padding: 0.5rem 0.875rem;
+}
+
+.hm-mastered { color: #16a34a; font-weight: 600; }
+
+.hm-legend {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hm-legend span {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: #6b6b68;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+/* ── Section titles ──────────────────────────────────────────────────────── */
+
+.section-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #6b6b68;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+
+/* ── Students table ──────────────────────────────────────────────────────── */
+
+.students-section { margin-top: 0.5rem; }
+
+.students-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.students-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e2e0dc;
+}
+
+.students-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+}
+
+.student-row {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.student-row:hover td { background: #f9f8f6; }
+
+.student-name-cell {
+  font-weight: 600;
+  color: #1a1a18 !important;
+}
+
+.mastery-pill {
+  background: #dcfce7;
+  color: #166534;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+}
+
+/* ── Sessions table ──────────────────────────────────────────────────────── */
+
+.sessions-section { margin-top: 2rem; }
+
+.sessions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.sessions-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e2e0dc;
+}
+
+.sessions-table td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+}
+
+.capitalize { text-transform: capitalize; }
+
+.empty-state {
+  font-size: 0.9375rem;
+  color: #9ca3af;
+  padding: 1rem 0;
+}

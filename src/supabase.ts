@@ -97,6 +97,57 @@ export async function fetchFactStats(
 
 // ─── Fact progress (streak + mastery) ────────────────────────────────────────
 
+// ─── Teacher queries ──────────────────────────────────────────────────────────
+
+export interface TeacherStudent {
+  name: string;
+  created_at: string;
+}
+
+export interface TeacherFactProgress {
+  student_name: string;
+  a: number;
+  b: number;
+  consecutive_correct: number;
+  mastered: boolean;
+}
+
+export interface TeacherFactRecord {
+  student_name: string;
+  a: number;
+  b: number;
+  correct: boolean;
+}
+
+export interface TeacherSession {
+  student_name: string;
+  session_type: string;
+  lesson: string;
+  correct: number;
+  total: number;
+  created_at: string;
+}
+
+export async function fetchTeacherStudents(): Promise<TeacherStudent[]> {
+  const { data } = await supabase.from("students").select("name, created_at").order("name");
+  return data ?? [];
+}
+
+export async function fetchAllFactProgress(): Promise<TeacherFactProgress[]> {
+  const { data } = await supabase.from("fact_progress").select("*");
+  return data ?? [];
+}
+
+export async function fetchAllFacts(): Promise<TeacherFactRecord[]> {
+  const { data } = await supabase.from("facts").select("student_name, a, b, correct");
+  return data ?? [];
+}
+
+export async function fetchAllSessions(): Promise<TeacherSession[]> {
+  const { data } = await supabase.from("sessions").select("*").order("created_at", { ascending: false });
+  return data ?? [];
+}
+
 const MASTERY_THRESHOLD = 5;
 
 export async function updateFactProgress(
