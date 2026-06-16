@@ -22,6 +22,22 @@ export async function checkStudent(name: string): Promise<boolean> {
   return !!data;
 }
 
+export async function fetchInitialTestDone(name: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("students")
+    .select("initial_test_done")
+    .ilike("name", name.trim())
+    .single();
+  return data?.initial_test_done ?? false;
+}
+
+export async function markInitialTestDone(name: string): Promise<void> {
+  await supabase
+    .from("students")
+    .update({ initial_test_done: true })
+    .ilike("name", name.trim());
+}
+
 // ─── Facts ────────────────────────────────────────────────────────────────────
 
 export async function logFact(payload: {

@@ -3,7 +3,7 @@ import {
   LESSONS, DURATIONS, buildInitialQueue, buildFiveMinQueue, buildThreeMinQueue, shuffle,
   type Pair, type Lesson, type SessionMode, type FactStat,
 } from "./curriculum";
-import { checkStudent, logFact, logSession, fetchMistakes, fetchFactStats, updateFactProgress } from "./supabase";
+import { checkStudent, logFact, logSession, fetchMistakes, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone } from "./supabase";
 import "./App.css";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
@@ -22,12 +22,6 @@ function loadPretests(): Set<string> {
 }
 function savePretests(s: Set<string>) { localStorage.setItem(PRETEST_KEY, JSON.stringify([...s])); }
 
-function isInitialDone(name: string): boolean {
-  return localStorage.getItem(`multianki_init_${name}`) === "true";
-}
-function markInitialDone(name: string) {
-  localStorage.setItem(`multianki_init_${name}`, "true");
-}
 
 interface Progress { mistakes: Pair[]; }
 function loadProgress(): Progress {
@@ -64,14 +58,8 @@ export default function App() {
   const [studentName, setStudentName]         = useState<string | null>(loadStudentName);
   const [progress, setProgress]               = useState<Progress>(loadProgress);
   const [completedPretests, setCompletedPretests] = useState<Set<string>>(loadPretests);
-  const [initialDone, setInitialDone]         = useState<boolean>(
-    studentName ? isInitialDone(studentName) : false
-  );
-  const [phase, setPhase]                     = useState<AppPhase>(() => {
-    const name = loadStudentName();
-    if (name && !isInitialDone(name)) return "initial-welcome";
-    return "lobby";
-  });
+  const [initialDone, setInitialDone]         = useState<boolean>(false);
+  const [phase, setPhase]                     = useState<AppPhase>("lobby");
   const [activeLesson, setActiveLesson]       = useState<Lesson | null>(null);
   const [activeMode, setActiveMode]           = useState<SessionMode>("5min");
 
@@ -137,7 +125,7 @@ export default function App() {
       setProgress((prev) => ({ mistakes: [...prev.mistakes, ...mistakes] }));
 
       if (mode === "initial") {
-        markInitialDone(student);
+        markInitialTestDone(student);
         setInitialDone(true);
       } else if (mode === "5min" && lesson) {
         setCompletedPretests((prev) => {
@@ -335,9 +323,11 @@ export default function App() {
   const handleSignIn = async (name: string) => {
     saveStudentName(name);
     setStudentName(name);
-    const done = isInitialDone(name);
+    const [done, mistakes] = await Promise.all([
+      fetchInitialTestDone(name),
+      fetchMistakes(name),
+    ]);
     setInitialDone(done);
-    const mistakes = await fetchMistakes(name);
     setProgress({ mistakes });
     setPhase(done ? "lobby" : "initial-welcome");
   };
@@ -356,6 +346,7 @@ export default function App() {
     setStudentName(null);
     setInitialDone(false);
     setPhase("lobby");
+    setProgress({ mistakes: [] });
   };
 
   return (
@@ -369,7 +360,7 @@ export default function App() {
         <InitialWelcomeView
           name={studentName}
           onStart={() => startSession(null, "initial")}
-          onSkip={() => { markInitialDone(studentName); setInitialDone(true); setPhase("lobby"); }}
+          onSkip={() => { markInitialTestDone(studentName ?? ""); setInitialDone(true); setPhase("lobby"); }}
         />
       )}
 
