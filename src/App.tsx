@@ -458,9 +458,6 @@ function PracticeView({ label, tag, secondsLeft, sessionCorrect, sessionTotal, p
         )}
       </div>
 
-      {secondsLeft !== null && (
-        <div className="score-line">{sessionCorrect} / {sessionTotal} correct</div>
-      )}
 
       {pracPhase === "question" ? (
         <>
