@@ -274,7 +274,15 @@ export default function App() {
           onSubmit={pracSubmit}
           onSkip={pracSkip}
           onNext={pracNext}
-          onBack={() => setPhase("lobby")}
+          onBack={() => {
+          // Save any mistakes accumulated so far before leaving
+          if (phase === "practice" && sessionMistakes.length > 0) {
+            setProgress((prev) => ({
+              mistakes: [...prev.mistakes, ...sessionMistakes],
+            }));
+          }
+          setPhase("lobby");
+        }}
           inputRef={inputRef}
         />
       )}
