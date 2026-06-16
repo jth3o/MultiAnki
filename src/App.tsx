@@ -549,31 +549,37 @@ function PracticeView({ label, tag, mode, secondsLeft, pair, input, onInput, onK
 // ─── Session done ─────────────────────────────────────────────────────────────
 
 function SessionDoneView({ result, onContinue }: { result: SessionResult; onContinue: () => void }) {
-  const isInitial  = result.mode === "initial";
-  const isReview   = result.mode === "review";
-  const isLearn    = result.mode === "3min";
+  const isInitial = result.mode === "initial";
+  const isReview  = result.mode === "review";
+  const isLearn   = result.mode === "3min";
+
+  const headline = isInitial
+    ? `Amazing work — you answered ${result.total} facts!`
+    : isReview
+      ? `Nice job — you reviewed ${result.total} fact${result.total !== 1 ? "s" : ""}!`
+      : isLearn
+        ? `Great effort — ${result.total} fact${result.total !== 1 ? "s" : ""} practised!`
+        : `Well done — you got through ${result.total} fact${result.total !== 1 ? "s" : ""}!`;
+
+  const detail = isInitial
+    ? `You got ${result.correct} right. Your lessons are ready below.`
+    : isReview
+      ? result.newMistakeCount === 0
+        ? `You got every single one right. Keep it up!`
+        : `You got ${result.correct} right. ${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} still need a little work.`
+      : isLearn
+        ? result.newMistakeCount === 0
+          ? `You got ${result.correct} right — no new mistakes. Impressive!`
+          : `You got ${result.correct} right. Keep practising the tricky ones.`
+        : result.newMistakeCount === 0
+          ? `You got ${result.correct} right — a perfect pre-test!`
+          : `You got ${result.correct} right. Use Learn to work on the rest.`;
 
   return (
     <div className="card done-card">
-      <p className="done-headline">
-        {isInitial ? "All done." : isReview ? "Review done." : "Time's up."}
-      </p>
-      <p className="done-stat">{result.correct} / {result.total} correct</p>
-      <p className="done-detail">
-        {isInitial
-          ? "Your lessons are ready. Start with any Pre-test below."
-          : isReview
-            ? result.newMistakeCount === 0
-              ? "You got everything right."
-              : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} still need work.`
-            : isLearn
-              ? result.newMistakeCount === 0
-                ? "Great — no new mistakes."
-                : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to keep working on.`
-              : result.newMistakeCount === 0
-                ? "Perfect — no mistakes."
-                : `${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to work on in Learn.`}
-      </p>
+      <p className="done-headline">{headline}</p>
+      <p className="done-stat">{result.correct} / {result.total}</p>
+      <p className="done-detail">{detail}</p>
       <button className="btn-primary" onClick={onContinue}>
         {isInitial ? "Go to lessons" : "Back to lessons"}
       </button>
