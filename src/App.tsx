@@ -348,22 +348,6 @@ function LobbyView({
 
   return (
     <div className="lobby">
-      <div className="curriculum-list">
-        {CURRICULUM.map((s, i) => {
-          const done = progress.completedStages[i];
-          const active = i === progress.stageIndex;
-          return (
-            <div
-              key={i}
-              className={`curriculum-item ${done ? "done" : ""} ${active ? "active" : ""}`}
-            >
-              <span className="ci-icon">{done ? "✓" : active ? "→" : ""}</span>
-              <span className="ci-label">{s.label}</span>
-            </div>
-          );
-        })}
-      </div>
-
       <div className="lobby-cta">
         <p className="stage-type-label">
           {icon[stage.type]}{" "}
