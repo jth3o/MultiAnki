@@ -73,8 +73,12 @@ function factWeight(stat: FactStat | undefined): number {
   return Math.max(2, 3 + stat.timesWrong * 3 - stat.timesCorrect * 2);
 }
 
+function normKey(a: number, b: number): string {
+  return a <= b ? `${a}x${b}` : `${b}x${a}`;
+}
+
 function weightedPick(pairs: Pair[], stats: Map<string, FactStat>): Pair {
-  const weights = pairs.map((p) => factWeight(stats.get(`${p.a}x${p.b}`)));
+  const weights = pairs.map((p) => factWeight(stats.get(normKey(p.a, p.b))));
   const total = weights.reduce((s, w) => s + w, 0);
   let r = Math.random() * total;
   for (let i = 0; i < pairs.length; i++) {

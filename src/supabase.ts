@@ -1,5 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 
+// Normalize a pair so smaller number is always first (3×7, never 7×3)
+function norm(a: number, b: number): { a: number; b: number } {
+  return a <= b ? { a, b } : { a: b, b: a };
+}
+
 const SUPABASE_URL = "https://xftkfdzqfunmqwwbskll.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmdGtmZHpxZnVubXF3d2Jza2xsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MjcyNDUsImV4cCI6MjA5NzIwMzI0NX0.8b9u0NeY6ezvlE-T7vECewn0s8wa6_VSe4hatQe19O4";
 
@@ -27,7 +32,8 @@ export async function logFact(payload: {
   answer_given: number | null;
   correct: boolean;
 }) {
-  await supabase.from("facts").insert(payload);
+  const { a, b } = norm(payload.a, payload.b);
+  await supabase.from("facts").insert({ ...payload, a, b });
 }
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
@@ -99,12 +105,14 @@ export async function updateFactProgress(
   b: number,
   correct: boolean
 ): Promise<void> {
+  const { a: na, b: nb } = norm(a, b);
+
   const { data } = await supabase
     .from("fact_progress")
     .select("consecutive_correct, mastered")
     .eq("student_name", student_name)
-    .eq("a", a)
-    .eq("b", b)
+    .eq("a", na)
+    .eq("b", nb)
     .maybeSingle();
 
   const prev = data?.consecutive_correct ?? 0;
@@ -112,7 +120,7 @@ export async function updateFactProgress(
   const mastered = newStreak >= MASTERY_THRESHOLD;
 
   await supabase.from("fact_progress").upsert(
-    { student_name, a, b, consecutive_correct: newStreak, mastered, updated_at: new Date().toISOString() },
+    { student_name, a: na, b: nb, consecutive_correct: newStreak, mastered, updated_at: new Date().toISOString() },
     { onConflict: "student_name,a,b" }
   );
 }

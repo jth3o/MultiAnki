@@ -217,7 +217,12 @@ export default function App() {
   const startReview = () => {
     if (progress.mistakes.length === 0) return;
     isFinishingRef.current = false;
-    setQueue(shuffle([...progress.mistakes]));
+    // Mistakes are stored normalized (smaller×larger).
+    // Expand to both directions so students see e.g. both 3×7 and 7×3.
+    const expanded = progress.mistakes.flatMap((p) =>
+      p.a === p.b ? [p] : [p, { a: p.b, b: p.a }]
+    );
+    setQueue(shuffle(expanded));
     setSessionMistakes([]);
     setSessionCorrect(0);
     setSessionTotal(0);
