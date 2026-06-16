@@ -249,9 +249,6 @@ body {
   transition: color 0.3s;
 }
 
-.timer.urgent {
-  color: var(--incorrect);
-}
 
 .timed-score {
   font-size: 0.875rem;
