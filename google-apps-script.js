@@ -4,39 +4,21 @@
 //   - Execute as: Me
 //   - Who has access: Anyone
 // Copy the deployment URL and paste it into src/config.ts in the app.
-
-const SHEET_NAME = "Results";
+//
+// Two sheets are written:
+//   "Facts"   — one row per question attempt (every submit / I don't know)
+//   "Sessions"— one row per completed session (summary)
 
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // Create the Results sheet if it doesn't exist
-    let sheet = ss.getSheetByName(SHEET_NAME);
-    if (!sheet) {
-      sheet = ss.insertSheet(SHEET_NAME);
-      sheet.appendRow([
-        "Timestamp",
-        "Student",
-        "Session",
-        "Lesson",
-        "Correct",
-        "Total",
-        "Mistakes",
-      ]);
-      sheet.setFrozenRows(1);
+    if (data.type === "fact") {
+      writeFact(ss, data);
+    } else if (data.type === "session-summary") {
+      writeSession(ss, data);
     }
-
-    sheet.appendRow([
-      new Date().toLocaleString(),
-      data.student   ?? "",
-      data.session   ?? "",   // "lesson" or "review"
-      data.lesson    ?? "",   // e.g. "Lesson 1" or "Review"
-      data.correct   ?? 0,
-      data.total     ?? 0,
-      (data.mistakes ?? []).map((m) => `${m.a}×${m.b}`).join(", "),
-    ]);
 
     return ContentService
       .createTextOutput(JSON.stringify({ ok: true }))
@@ -46,4 +28,45 @@ function doPost(e) {
       .createTextOutput(JSON.stringify({ ok: false, error: err.message }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+function getOrCreateSheet(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function writeFact(ss, data) {
+  const sheet = getOrCreateSheet(ss, "Facts", [
+    "Timestamp", "Student", "Lesson", "Fact", "A", "B", "Answer Given", "Correct",
+  ]);
+  sheet.appendRow([
+    new Date().toLocaleString(),
+    data.student  ?? "",
+    data.lesson   ?? "",
+    data.fact     ?? "",          // e.g. "7×8"
+    data.a        ?? "",          // 7
+    data.b        ?? "",          // 8
+    data.answer   ?? "skipped",
+    data.correct  ? "Yes" : "No",
+  ]);
+}
+
+function writeSession(ss, data) {
+  const sheet = getOrCreateSheet(ss, "Sessions", [
+    "Timestamp", "Student", "Session Type", "Lesson", "Correct", "Total", "Mistakes",
+  ]);
+  sheet.appendRow([
+    new Date().toLocaleString(),
+    data.student  ?? "",
+    data.session  ?? "",
+    data.lesson   ?? "",
+    data.correct  ?? 0,
+    data.total    ?? 0,
+    (data.mistakes ?? []).join(", "),
+  ]);
 }

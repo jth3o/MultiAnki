@@ -213,6 +213,20 @@ body {
   width: 100%;
 }
 
+.session-timer {
+  margin-left: auto;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.score-line {
+  font-size: 0.875rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .btn-back {
   background: none;
   border: none;
@@ -301,6 +315,13 @@ body {
   font-size: 1.375rem;
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+
+.done-stat {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 .done-detail {
