@@ -1,7 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { LESSONS, factsForLesson, shuffle, type Pair, type Lesson } from "./curriculum";
 import { isApproved, normalizeName } from "./students";
+import { SHEETS_ENDPOINT } from "./config";
 import "./App.css";
+
+function postToSheets(payload: object) {
+  if (!SHEETS_ENDPOINT) return;
+  fetch(SHEETS_ENDPOINT, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }).catch(() => { /* silently ignore network errors */ });
+}
 
 // ─── Name gate ────────────────────────────────────────────────────────────────
 
@@ -165,30 +174,48 @@ export default function App() {
 
   const finishSession = useCallback(() => {
     if (phase === "practice") {
-      // Merge new mistakes into stored mistakes
+      const totalFacts = activeLesson ? factsForLesson(activeLesson).length : 0;
+      const correct = totalFacts - sessionMistakes.length;
       setProgress((prev) => ({
         mistakes: [...prev.mistakes, ...sessionMistakes],
       }));
+      postToSheets({
+        student:  studentName,
+        session:  "lesson",
+        lesson:   activeLesson?.label ?? "",
+        correct,
+        total:    totalFacts,
+        mistakes: sessionMistakes,
+      });
       setSessionResult({
         mode: "lesson",
         lessonLabel: activeLesson?.label,
         newMistakeCount: sessionMistakes.length,
       });
     } else {
-      // Review done: clear the mistakes that were just reviewed
+      const totalReviewed = queue.length + sessionMistakes.length;
+      const correct = totalReviewed - sessionMistakes.length;
       setProgress((prev) => ({
         mistakes: prev.mistakes.filter((p) =>
           sessionMistakes.some((m) => m.a === p.a && m.b === p.b)
         ),
       }));
+      postToSheets({
+        student:  studentName,
+        session:  "review",
+        lesson:   "Review",
+        correct,
+        total:    totalReviewed,
+        mistakes: sessionMistakes,
+      });
       setSessionResult({
         mode: "review",
         newMistakeCount: sessionMistakes.length,
-        clearedCount: queue.length, // already 0, but we could track separately
+        clearedCount: queue.length,
       });
     }
     setPhase("session-done");
-  }, [phase, sessionMistakes, activeLesson, queue]);
+  }, [phase, sessionMistakes, activeLesson, queue, studentName]);
 
   const pracKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
