@@ -211,6 +211,7 @@ export default function App() {
           onSubmit={pracSubmit}
           onSkip={pracSkip}
           onNext={pracNext}
+          onBack={() => setPhase("lobby")}
           inputRef={inputRef}
         />
       )}
@@ -282,6 +283,7 @@ function PracticeView({
   onSubmit,
   onSkip,
   onNext,
+  onBack,
   inputRef,
 }: {
   label: string;
@@ -295,11 +297,15 @@ function PracticeView({
   onSubmit: () => void;
   onSkip: () => void;
   onNext: () => void;
+  onBack: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
   return (
     <div className="card">
       <div className="session-meta">
+        <button className="btn-back" onClick={onBack} aria-label="Back to lessons">
+          ←
+        </button>
         <span className="session-label">{label}</span>
         <span className="session-tag">{tag}</span>
       </div>
