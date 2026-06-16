@@ -339,8 +339,6 @@ export default function App() {
           label={phase === "review" ? "Review" : (activeLesson?.label ?? "")}
           tag={phase === "review" ? `${queue.length} remaining` : (activeLesson?.tag ?? "")}
           secondsLeft={secondsLeft}
-          sessionCorrect={sessionCorrect}
-          sessionTotal={sessionTotal}
           pair={queue[0]}
           input={pracInput}
           onInput={setPracInput}
@@ -429,12 +427,10 @@ function LobbyView({ hasMistakes, mistakeCount, onSelectLesson, onReview }: {
 
 // ─── Practice ─────────────────────────────────────────────────────────────────
 
-function PracticeView({ label, tag, secondsLeft, sessionCorrect, sessionTotal, pair, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef }: {
+function PracticeView({ label, tag, secondsLeft, pair, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef }: {
   label: string;
   tag: string;
   secondsLeft: number | null;
-  sessionCorrect: number;
-  sessionTotal: number;
   pair: Pair;
   input: string;
   onInput: (v: string) => void;
