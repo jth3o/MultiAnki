@@ -277,7 +277,6 @@ export default function App() {
   const pracNext = useCallback(() => {
     const pair       = queue[0];
     const wasCorrect = pracFeedback?.correct ?? false;
-    const mode       = activeModeRef.current;
 
     let newQueue: Pair[];
 
@@ -286,10 +285,7 @@ export default function App() {
       newQueue = [...queue.slice(1), pair];
     } else {
       newQueue = queue.slice(1);
-      // Learn: reshuffle and keep going — no timer, student exits via back button
-      if (newQueue.length === 0 && phase === "practice" && mode === "3min") {
-        newQueue = buildThreeMinQueue(activeLessonRef.current!, []);
-      }
+      // Learn ends naturally when all facts have been seen 4 times
       // initial + 5-min: end when queue exhausted (all facts seen once)
     }
 
@@ -573,7 +569,7 @@ function SessionDoneView({ result, onContinue }: { result: SessionResult; onCont
     : isReview
       ? `Nice job — you reviewed ${result.total} fact${result.total !== 1 ? "s" : ""}!`
       : isLearn
-        ? `Great effort — ${result.total} fact${result.total !== 1 ? "s" : ""} practised!`
+        ? `Lesson complete!`
         : `Well done — you got through ${result.total} fact${result.total !== 1 ? "s" : ""}!`;
 
   const detail = isInitial
@@ -584,8 +580,8 @@ function SessionDoneView({ result, onContinue }: { result: SessionResult; onCont
         : `You got ${result.correct} right. ${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} still need a little work.`
       : isLearn
         ? result.newMistakeCount === 0
-          ? `You got ${result.correct} right — no new mistakes. Impressive!`
-          : `You got ${result.correct} right. Keep practising the tricky ones.`
+          ? `You got every one right. Impressive!`
+          : `You got ${result.correct} / ${result.total} right. ${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to keep working on.`
         : result.newMistakeCount === 0
           ? `You got ${result.correct} right — a perfect pre-test!`
           : `You got ${result.correct} right. Use Learn to work on the rest.`;

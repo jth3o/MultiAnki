@@ -77,24 +77,31 @@ function normKey(a: number, b: number): string {
   return a <= b ? `${a}x${b}` : `${b}x${a}`;
 }
 
-function weightedPick(pairs: Pair[], stats: Map<string, FactStat>): Pair {
-  const weights = pairs.map((p) => factWeight(stats.get(normKey(p.a, p.b))));
-  const total = weights.reduce((s, w) => s + w, 0);
-  let r = Math.random() * total;
-  for (let i = 0; i < pairs.length; i++) {
-    r -= weights[i];
-    if (r <= 0) return pairs[i];
-  }
-  return pairs[pairs.length - 1];
-}
 
-export function buildThreeMinQueue(lesson: Lesson, stats: FactStat[]): Pair[] {
+// Each fact appears exactly 4 times. Harder facts are sorted earlier in each
+// pass so students drill weak spots first within each round.
+export function buildLearnQueue(lesson: Lesson, stats: FactStat[]): Pair[] {
   const allPairs = factsForLesson(lesson);
   const statsMap = new Map<string, FactStat>();
   for (const s of stats) statsMap.set(`${s.a}x${s.b}`, s);
+
   const queue: Pair[] = [];
-  for (let i = 0; i < 80; i++) queue.push(weightedPick(allPairs, statsMap));
+  for (let pass = 0; pass < 4; pass++) {
+    // Sort by weight descending so harder facts come up first each pass,
+    // then shuffle within equal-weight groups for variety
+    const sorted = [...allPairs].sort((a, b) => {
+      const wa = factWeight(statsMap.get(normKey(a.a, a.b)));
+      const wb = factWeight(statsMap.get(normKey(b.a, b.b)));
+      return wb - wa + (Math.random() - 0.5) * 0.5;
+    });
+    queue.push(...sorted);
+  }
   return queue;
+}
+
+// Keep old name as alias for any remaining references
+export function buildThreeMinQueue(lesson: Lesson, stats: FactStat[]): Pair[] {
+  return buildLearnQueue(lesson, stats);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
