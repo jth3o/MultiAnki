@@ -302,7 +302,7 @@ export default function App() {
   const pracKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       if (pracPhase === "question" && pracInput.trim()) pracSubmit();
-      else if (pracPhase === "feedback") pracNext();
+      else if (pracPhase === "feedback" && pracFeedback && !pracFeedback.correct) pracNext();
     }
   };
 
@@ -506,6 +506,21 @@ function LobbyView({ hasMistakes, mistakeCount, completedPretests, onSelectLesso
   );
 }
 
+// ─── Auto-advance on correct ──────────────────────────────────────────────────
+
+function AutoAdvance({ correct, onNext, children }: {
+  correct: boolean;
+  onNext: () => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!correct) return;
+    const t = setTimeout(onNext, 800);
+    return () => clearTimeout(t);
+  }, [correct, onNext]);
+  return <>{children}</>;
+}
+
 // ─── Practice ─────────────────────────────────────────────────────────────────
 
 function PracticeView({ label, tag, mode, secondsLeft, pair, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef }: {
@@ -542,15 +557,17 @@ function PracticeView({ label, tag, mode, secondsLeft, pair, input, onInput, onK
         </>
       ) : (
         feedback && (
-          <>
+          <AutoAdvance correct={feedback.correct} onNext={onNext}>
             <p className="problem">{pair.a} &times; {pair.b} = {feedback.answer}</p>
             <p className={`result-label ${feedback.correct ? "correct" : "incorrect"}`}>
               {feedback.correct ? "Correct." : `${pair.a} × ${pair.b} = ${feedback.answer}`}
             </p>
-            <div className="actions">
-              <button className="btn-primary" onClick={onNext}>Next</button>
-            </div>
-          </>
+            {!feedback.correct && (
+              <div className="actions">
+                <button className="btn-primary" onClick={onNext}>Next</button>
+              </div>
+            )}
+          </AutoAdvance>
         )
       )}
     </div>
