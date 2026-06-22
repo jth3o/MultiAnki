@@ -186,21 +186,24 @@ export default function App() {
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
-    setSecondsLeft(DURATIONS[mode]);
+    const timed = mode !== "3min";
+    setSecondsLeft(timed ? DURATIONS[mode] : null);
     setPhase("practice");
 
     if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setSecondsLeft((s) => {
-        if (s === null || s <= 1) {
-          clearInterval(timerRef.current!);
-          timerRef.current = null;
-          endSession();
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
+    if (timed) {
+      timerRef.current = setInterval(() => {
+        setSecondsLeft((s) => {
+          if (s === null || s <= 1) {
+            clearInterval(timerRef.current!);
+            timerRef.current = null;
+            endSession();
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+    }
   };
 
   // ── Start review ───────────────────────────────────────────────────────────
@@ -283,9 +286,9 @@ export default function App() {
       newQueue = [...queue.slice(1), pair];
     } else {
       newQueue = queue.slice(1);
-      // 3-min only: cycle (pre-built 80-item queue; extend if somehow exhausted)
+      // Learn: reshuffle and keep going — no timer, student exits via back button
       if (newQueue.length === 0 && phase === "practice" && mode === "3min") {
-        endSession(); return;
+        newQueue = buildThreeMinQueue(activeLessonRef.current!, []);
       }
       // initial + 5-min: end when queue exhausted (all facts seen once)
     }
