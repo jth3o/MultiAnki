@@ -10,6 +10,38 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ─── Pair weights ─────────────────────────────────────────────────────────────
+// Stores wrong/slow counts per (student, op, a, b) in Supabase.
+// Run once in Supabase SQL editor:
+//   CREATE TABLE pair_weights (
+//     student_name TEXT NOT NULL,
+//     op TEXT NOT NULL,
+//     a INTEGER NOT NULL,
+//     b INTEGER NOT NULL,
+//     wrong_count INTEGER NOT NULL DEFAULT 0,
+//     slow_count INTEGER NOT NULL DEFAULT 0,
+//     PRIMARY KEY (student_name, op, a, b)
+//   );
+
+export interface PairWeight { a: number; b: number; wrongCount: number; slowCount: number; }
+
+export async function fetchPairWeights(student_name: string, op: string): Promise<PairWeight[]> {
+  const { data } = await supabase
+    .from("pair_weights")
+    .select("a, b, wrong_count, slow_count")
+    .eq("student_name", student_name)
+    .eq("op", op);
+  return (data ?? []).map(r => ({ a: r.a, b: r.b, wrongCount: r.wrong_count, slowCount: r.slow_count }));
+}
+
+export async function upsertPairWeights(student_name: string, op: string, weights: PairWeight[]): Promise<void> {
+  if (weights.length === 0) return;
+  await supabase.from("pair_weights").upsert(
+    weights.map(w => ({ student_name, op, a: w.a, b: w.b, wrong_count: w.wrongCount, slow_count: w.slowCount })),
+    { onConflict: "student_name,op,a,b" }
+  );
+}
+
 // ─── Students ─────────────────────────────────────────────────────────────────
 
 export async function checkStudent(name: string): Promise<boolean> {

@@ -3,44 +3,57 @@ import {
   DURATIONS, buildInitialQueue, buildDivisionQueue, buildThreeMinQueue, shuffle,
   type Pair, type SessionMode, type FactStat,
 } from "./curriculum";
-import { checkStudent, logFact, logSession, fetchMistakes, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting } from "./supabase";
+import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchPairWeights, upsertPairWeights, type PairWeight } from "./supabase";
 import "./App.css";
 
-// ─── localStorage helpers ─────────────────────────────────────────────────────
+// ─── localStorage (name only) ─────────────────────────────────────────────────
 
-const NAME_KEY      = "multianki_student";
-const MULT_KEY      = "multianki_mult";
-const DIV_KEY       = "multianki_div";
-const INIT_DONE_KEY = "multianki_init_done";
-
-const SLOW_THRESHOLD_SECS = 5; // correct answers taking longer than this add slow weight
+const NAME_KEY = "multianki_student";
+const SLOW_THRESHOLD_SECS = 5;
 
 function loadStudentName(): string | null { return localStorage.getItem(NAME_KEY); }
 function saveStudentName(n: string) { localStorage.setItem(NAME_KEY, n); }
 function clearStudentName() { localStorage.removeItem(NAME_KEY); }
 
-function loadInitialDone(): boolean { return localStorage.getItem(INIT_DONE_KEY) === "true"; }
-function saveInitialDone(v: boolean) { localStorage.setItem(INIT_DONE_KEY, v ? "true" : "false"); }
-function clearInitialDone() { localStorage.removeItem(INIT_DONE_KEY); }
+// Progress is stored in Supabase; this is just an in-memory type.
+interface Progress { mult: PairWeight[]; div: PairWeight[]; }
 
-// Multiplication and division stored separately so resetting one doesn't affect the other.
-interface OpProgress { mistakes: Pair[]; slowPairs: Pair[]; }
-interface Progress { mult: OpProgress; div: OpProgress; }
+function emptyProgress(): Progress { return { mult: [], div: [] }; }
 
-function emptyOp(): OpProgress { return { mistakes: [], slowPairs: [] }; }
+// Merge session results into a weight array, returning updated weights.
+function mergeWeights(
+  current: PairWeight[],
+  mistakes: Pair[],
+  corrects: Pair[],
+  slows: Pair[],
+  op: "mult" | "div",
+): PairWeight[] {
+  const key = (a: number, b: number) =>
+    op === "div" ? `${a}x${b}` : `${Math.min(a,b)}x${Math.max(a,b)}`;
+  const canonA = (p: Pair) => op === "div" ? p.a : Math.min(p.a, p.b);
+  const canonB = (p: Pair) => op === "div" ? p.b : Math.max(p.a, p.b);
 
-function loadProgress(): Progress {
-  const load = (key: string): OpProgress => {
-    try { const r = localStorage.getItem(key); if (r) return JSON.parse(r); } catch { /**/ }
-    return emptyOp();
-  };
-  return { mult: load(MULT_KEY), div: load(DIV_KEY) };
-}
-function saveProgress(p: Progress) {
-  try {
-    localStorage.setItem(MULT_KEY, JSON.stringify(p.mult));
-    localStorage.setItem(DIV_KEY, JSON.stringify(p.div));
-  } catch { /**/ }
+  const map = new Map<string, PairWeight>();
+  for (const w of current) map.set(key(w.a, w.b), { ...w });
+
+  for (const p of mistakes) {
+    const k = key(canonA(p), canonB(p));
+    const w = map.get(k) ?? { a: canonA(p), b: canonB(p), wrongCount: 0, slowCount: 0 };
+    map.set(k, { ...w, wrongCount: w.wrongCount + 1 });
+  }
+
+  for (const p of corrects) {
+    const k = key(canonA(p), canonB(p));
+    const isSlow = slows.some(s => s.a === p.a && s.b === p.b);
+    const w = map.get(k) ?? { a: canonA(p), b: canonB(p), wrongCount: 0, slowCount: 0 };
+    map.set(k, {
+      ...w,
+      wrongCount: Math.max(0, w.wrongCount - 1),
+      slowCount: isSlow ? w.slowCount + 1 : Math.max(0, w.slowCount - 1),
+    });
+  }
+
+  return [...map.values()].filter(w => w.wrongCount > 0 || w.slowCount > 0);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -66,8 +79,9 @@ interface SessionResult {
 
 export default function App() {
   const [studentName, setStudentName]         = useState<string | null>(loadStudentName);
-  const [progress, setProgress]               = useState<Progress>(loadProgress);
-  const [initialDone, setInitialDone]         = useState<boolean>(loadInitialDone);
+  const [progress, setProgress]               = useState<Progress>(emptyProgress);
+  const [initialDone, setInitialDone]         = useState<boolean>(false);
+  const [appReady, setAppReady]               = useState<boolean>(!loadStudentName()); // false when name known but data not yet fetched
   const [practiceDurationSecs, setPracticeDurationSecs] = useState<number>(300);
   const [phase, setPhase]                     = useState<AppPhase>("lobby");
   const [activeMode, setActiveMode]           = useState<SessionMode>("practice");
@@ -91,6 +105,7 @@ export default function App() {
   const questionStartRef = useRef<number>(Date.now());
 
   // Stable refs for timer/endSession callback
+  const progressRef         = useRef<Progress>(emptyProgress());
   const sessionMistakesRef  = useRef<Pair[]>([]);
   const sessionCorrectsRef  = useRef<Pair[]>([]);
   const sessionSlowsRef     = useRef<Pair[]>([]);
@@ -110,7 +125,27 @@ export default function App() {
   useEffect(() => { sessionTotalRef.current = sessionTotal; },         [sessionTotal]);
   useEffect(() => { studentNameRef.current = studentName; },           [studentName]);
   useEffect(() => { phaseRef.current = phase; },                       [phase]);
-  useEffect(() => { saveProgress(progress); },                         [progress]);
+  useEffect(() => { progressRef.current = progress; },                 [progress]);
+
+  // When the student name is already remembered, fetch their data from Supabase on mount.
+  useEffect(() => {
+    const name = loadStudentName();
+    if (!name) return;
+    (async () => {
+      const [done, multW, divW, durationStr] = await Promise.all([
+        fetchInitialTestDone(name),
+        fetchPairWeights(name, "mult"),
+        fetchPairWeights(name, "div"),
+        fetchSetting("practice_duration_secs", "300"),
+      ]);
+      setInitialDone(done);
+      setProgress({ mult: multW, div: divW });
+      setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
+      setPhase(done ? "lobby" : "initial-welcome");
+      setAppReady(true);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if ((phase === "practice" || phase === "review") && pracPhase === "question") {
@@ -137,35 +172,17 @@ export default function App() {
     const total     = sessionTotalRef.current;
     const student   = studentNameRef.current ?? "";
 
-    const updateOp = (prev: OpProgress): OpProgress => {
-      // mistakes pool: remove one occurrence per correct answer, add wrong answers
-      let nextMistakes = [...prev.mistakes];
-      for (const c of corrects) {
-        const idx = nextMistakes.findIndex((p) => p.a === c.a && p.b === c.b);
-        if (idx >= 0) nextMistakes.splice(idx, 1);
-      }
-      nextMistakes = [...nextMistakes, ...mistakes];
-
-      // slow pool: remove one occurrence per fast correct answer, add new slows
-      let nextSlows = [...prev.slowPairs];
-      for (const c of corrects.filter(c => !slows.some(s => s.a === c.a && s.b === c.b))) {
-        const idx = nextSlows.findIndex((p) => p.a === c.a && p.b === c.b);
-        if (idx >= 0) nextSlows.splice(idx, 1);
-      }
-      nextSlows = [...nextSlows, ...slows];
-
-      return { mistakes: nextMistakes, slowPairs: nextSlows };
-    };
-
     if (mode === "initial") {
       markInitialTestDone(student);
-      saveInitialDone(true);
       setInitialDone(true);
-      setProgress((prev) => ({ ...prev, mult: { ...prev.mult, mistakes: [...prev.mult.mistakes, ...mistakes] } }));
-    } else if (op === "div") {
-      setProgress((prev) => ({ ...prev, div: updateOp(prev.div) }));
+      const newWeights = mergeWeights(progressRef.current.mult, mistakes, [], [], "mult");
+      setProgress((prev) => ({ ...prev, mult: newWeights }));
+      upsertPairWeights(student, "mult", newWeights);
     } else {
-      setProgress((prev) => ({ ...prev, mult: updateOp(prev.mult) }));
+      const current = op === "div" ? progressRef.current.div : progressRef.current.mult;
+      const newWeights = mergeWeights(current, mistakes, corrects, slows, op);
+      setProgress((prev) => op === "div" ? { ...prev, div: newWeights } : { ...prev, mult: newWeights });
+      upsertPairWeights(student, op, newWeights);
     }
 
     const curPhase = phaseRef.current;
@@ -262,50 +279,29 @@ export default function App() {
     isFinishingRef.current = false;
     sessionExpiredRef.current = false;
 
-    const opProgress = op === "div" ? progress.div : progress.mult;
+    const weights = op === "div" ? progress.div : progress.mult;
+    const wKey = (a: number, b: number) =>
+      op === "div" ? `${a}x${b}` : `${Math.min(a,b)}x${Math.max(a,b)}`;
 
-    const pairKey = (p: Pair) =>
-      op === "div" ? `${p.a}x${p.b}` : `${Math.min(p.a, p.b)}x${Math.max(p.a, p.b)}`;
+    const wMap = new Map<string, PairWeight>();
+    for (const w of weights) wMap.set(`${w.a}x${w.b}`, w);
 
-    // Wrong count: each occurrence in the pool = one time wrong
-    const wrongMap = new Map<string, number>();
-    for (const p of opProgress.mistakes) {
-      const k = pairKey(p);
-      wrongMap.set(k, (wrongMap.get(k) ?? 0) + 1);
-    }
+    const score = (a: number, b: number) => {
+      const w = wMap.get(wKey(a, b));
+      return (w?.wrongCount ?? 0) * 2 + Math.floor((w?.slowCount ?? 0) / 2);
+    };
 
-    // Slow count: each occurrence = one slow-but-correct answer
-    const slowMap = new Map<string, number>();
-    for (const p of opProgress.slowPairs) {
-      const k = pairKey(p);
-      slowMap.set(k, (slowMap.get(k) ?? 0) + 1);
-    }
-
-    // Each fact appears (1 + wrongCount*2 + floor(slowCount/2)) times,
-    // capped at 6. Wrong answers dominate; slow answers add a little extra.
     const allFacts = op === "div" ? buildDivisionQueue() : buildInitialQueue();
     const weighted: Pair[] = [];
     for (const p of allFacts) {
-      const k = pairKey(p);
-      const reps = Math.min(6, 1 + (wrongMap.get(k) ?? 0) * 2 + Math.floor((slowMap.get(k) ?? 0) / 2));
+      const reps = Math.min(6, 1 + score(p.a, p.b));
       for (let i = 0; i < reps; i++) {
         weighted.push(p);
         if (op !== "div" && p.a !== p.b) weighted.push({ a: p.b, b: p.a });
       }
     }
 
-    // Combined score for sorting: harder facts come first
-    const scoreMap = new Map<string, number>();
-    for (const p of allFacts) {
-      const k = pairKey(p);
-      scoreMap.set(k, (wrongMap.get(k) ?? 0) * 2 + Math.floor((slowMap.get(k) ?? 0) / 2));
-    }
-
-    const q = shuffle(weighted).sort((a, b) => {
-      const ka = pairKey(a);
-      const kb = pairKey(b);
-      return (scoreMap.get(kb) ?? 0) - (scoreMap.get(ka) ?? 0);
-    });
+    const q = shuffle(weighted).sort((a, b) => score(b.a, b.b) - score(a.a, a.b));
 
     activeOpRef.current = op;
     setQueue(q);
@@ -412,11 +408,11 @@ export default function App() {
   const handleBack = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (phase === "practice" && sessionMistakes.length > 0) {
-      if (activeOpRef.current === "div") {
-        setProgress((prev) => ({ ...prev, div: { ...prev.div, mistakes: [...prev.div.mistakes, ...sessionMistakes] } }));
-      } else {
-        setProgress((prev) => ({ ...prev, mult: { ...prev.mult, mistakes: [...prev.mult.mistakes, ...sessionMistakes] } }));
-      }
+      const op = activeOpRef.current;
+      const current = op === "div" ? progressRef.current.div : progressRef.current.mult;
+      const newWeights = mergeWeights(current, sessionMistakes, [], [], op);
+      setProgress((prev) => op === "div" ? { ...prev, div: newWeights } : { ...prev, mult: newWeights });
+      upsertPairWeights(studentName ?? "", op, newWeights);
     }
     setSecondsLeft(null);
     isFinishingRef.current = false;
@@ -428,32 +424,39 @@ export default function App() {
   const handleSignIn = async (name: string) => {
     saveStudentName(name);
     setStudentName(name);
-    const [done, mistakes, durationStr] = await Promise.all([
+    const [done, multW, divW, durationStr] = await Promise.all([
       fetchInitialTestDone(name),
-      fetchMistakes(name),
+      fetchPairWeights(name, "mult"),
+      fetchPairWeights(name, "div"),
       fetchSetting("practice_duration_secs", "300"),
     ]);
-    saveInitialDone(done);
     setInitialDone(done);
-    setProgress({ mult: { mistakes, slowPairs: [] }, div: emptyOp() });
+    setProgress({ mult: multW, div: divW });
     setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
+    setAppReady(true);
     setPhase(done ? "lobby" : "initial-welcome");
   };
 
   // ─── Auth gate ─────────────────────────────────────────────────────────────
 
   if (!studentName) return <NameGate onSignIn={handleSignIn} />;
+  if (!appReady) return (
+    <div className="shell">
+      <header className="site-header"><span className="logo">MultiAnki</span></header>
+      <div className="card loading-card"><p className="loading-text">Loading…</p></div>
+    </div>
+  );
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
   const signOut = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     clearStudentName();
-    clearInitialDone();
     setStudentName(null);
     setInitialDone(false);
+    setAppReady(false);
     setPhase("lobby");
-    setProgress({ mult: emptyOp(), div: emptyOp() });
+    setProgress(emptyProgress());
   };
 
   return (
