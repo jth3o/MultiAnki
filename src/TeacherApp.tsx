@@ -315,56 +315,54 @@ function StudentDetail({
 
 // ─── Session settings ─────────────────────────────────────────────────────────
 
-const DURATION_OPTIONS = [
-  { label: "1 minute",  value: 60  },
-  { label: "2 minutes", value: 120 },
-  { label: "3 minutes", value: 180 },
-  { label: "5 minutes", value: 300 },
-  { label: "10 minutes",value: 600 },
-];
-
 function SessionSettings() {
-  const [duration, setDuration]   = useState<number | null>(null);
-  const [saving, setSaving]       = useState(false);
-  const [saved, setSaved]         = useState(false);
+  const [minutes, setMinutes]   = useState<string>("");
+  const [saving, setSaving]     = useState(false);
+  const [saved, setSaved]       = useState(false);
+  const [error, setError]       = useState(false);
 
   useEffect(() => {
-    fetchSetting("practice_duration_secs", "300").then((v) =>
-      setDuration(parseInt(v, 10) || 300)
-    );
+    fetchSetting("practice_duration_secs", "300").then((v) => {
+      const secs = parseInt(v, 10) || 300;
+      setMinutes(String(Math.round(secs / 60)));
+    });
   }, []);
 
-  const handleChange = async (val: number) => {
-    setDuration(val);
+  const handleSave = async () => {
+    const n = parseInt(minutes, 10);
+    if (!Number.isInteger(n) || n < 1) { setError(true); return; }
+    setError(false);
     setSaving(true);
     setSaved(false);
-    await upsertSetting("practice_duration_secs", String(val));
+    await upsertSetting("practice_duration_secs", String(n * 60));
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  if (duration === null) return null;
-
   return (
     <div className="settings-section">
       <p className="section-title">Session settings</p>
       <div className="settings-row">
-        <label className="settings-label">Practice session length</label>
-        <select
-          className="settings-select"
-          value={duration}
-          onChange={(e) => handleChange(Number(e.target.value))}
+        <label className="settings-label">Practice session length (minutes)</label>
+        <input
+          className={`settings-input ${error ? "settings-input-error" : ""}`}
+          type="text"
+          inputMode="numeric"
+          value={minutes}
+          onChange={(e) => { setMinutes(e.target.value.replace(/[^0-9]/g, "")); setError(false); setSaved(false); }}
+          onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
           disabled={saving}
-        >
-          {DURATION_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          placeholder="5"
+        />
+        <button className="settings-save-btn" onClick={handleSave} disabled={saving || !minutes}>
+          {saving ? "Saving…" : "Save"}
+        </button>
         {saved && <span className="settings-saved">Saved</span>}
       </div>
+      {error && <p className="settings-error">Please enter a whole number of minutes (e.g. 5).</p>}
       <p className="settings-hint">
-        Students will finish a practice session after this amount of time — their current question completes first, then the session ends.
+        Students finish a practice session after this many minutes — their current question completes first, then the session ends.
       </p>
     </div>
   );
