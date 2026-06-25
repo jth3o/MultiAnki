@@ -61,6 +61,7 @@ export default function App() {
   // Practice state
   const [queue, setQueue]                     = useState<Pair[]>([]);
   const [sessionMistakes, setSessionMistakes] = useState<Pair[]>([]);
+  const [sessionCorrects, setSessionCorrects] = useState<Pair[]>([]);
   const [pracPhase, setPracPhase]             = useState<"question" | "feedback">("question");
   const [pracInput, setPracInput]             = useState("");
   const [pracFeedback, setPracFeedback]       = useState<PracticeFeedback | null>(null);
@@ -76,6 +77,7 @@ export default function App() {
 
   // Stable refs for timer/endSession callback
   const sessionMistakesRef  = useRef<Pair[]>([]);
+  const sessionCorrectsRef  = useRef<Pair[]>([]);
   const activeModeRef       = useRef<SessionMode>("practice");
   const activeOpRef         = useRef<"mult" | "div">("mult");
   const sessionExpiredRef   = useRef(false);
@@ -85,6 +87,7 @@ export default function App() {
   const phaseRef           = useRef<AppPhase>("lobby");
 
   useEffect(() => { sessionMistakesRef.current = sessionMistakes; },  [sessionMistakes]);
+  useEffect(() => { sessionCorrectsRef.current = sessionCorrects; },  [sessionCorrects]);
   useEffect(() => { activeModeRef.current = activeMode; },             [activeMode]);
   useEffect(() => { sessionCorrectRef.current = sessionCorrect; },     [sessionCorrect]);
   useEffect(() => { sessionTotalRef.current = sessionTotal; },         [sessionTotal]);
@@ -109,6 +112,7 @@ export default function App() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
     const mistakes  = sessionMistakesRef.current;
+    const corrects  = sessionCorrectsRef.current;
     const mode      = activeModeRef.current;
     const op        = activeOpRef.current;
     const correct   = sessionCorrectRef.current;
@@ -116,34 +120,26 @@ export default function App() {
     const student   = studentNameRef.current ?? "";
     const curPhase  = phaseRef.current;
 
-    if (curPhase === "practice") {
-      if (mode === "initial") {
-        markInitialTestDone(student);
-        saveInitialDone(true);
-        setInitialDone(true);
-        setProgress((prev) => ({ ...prev, mistakes: [...prev.mistakes, ...mistakes] }));
-      } else if (op === "div") {
-        setProgress((prev) => ({ ...prev, divMistakes: [...prev.divMistakes, ...mistakes] }));
-      } else {
-        setProgress((prev) => ({ ...prev, mistakes: [...prev.mistakes, ...mistakes] }));
+    const updatePool = (pool: Pair[]): Pair[] => {
+      // Remove one occurrence per correctly-answered pair (they're improving)
+      let next = [...pool];
+      for (const c of corrects) {
+        const idx = next.findIndex((p) => p.a === c.a && p.b === c.b);
+        if (idx >= 0) next.splice(idx, 1);
       }
+      // Add wrong answers (increases their weight for next session)
+      return [...next, ...mistakes];
+    };
+
+    if (mode === "initial") {
+      markInitialTestDone(student);
+      saveInitialDone(true);
+      setInitialDone(true);
+      setProgress((prev) => ({ ...prev, mistakes: [...prev.mistakes, ...mistakes] }));
+    } else if (op === "div") {
+      setProgress((prev) => ({ ...prev, divMistakes: updatePool(prev.divMistakes) }));
     } else {
-      // review: retain only still-wrong pairs
-      if (op === "div") {
-        setProgress((prev) => ({
-          ...prev,
-          divMistakes: prev.divMistakes.filter((p) =>
-            mistakes.some((m) => m.a === p.a && m.b === p.b)
-          ),
-        }));
-      } else {
-        setProgress((prev) => ({
-          ...prev,
-          mistakes: prev.mistakes.filter((p) =>
-            mistakes.some((m) => m.a === p.a && m.b === p.b)
-          ),
-        }));
-      }
+      setProgress((prev) => ({ ...prev, mistakes: updatePool(prev.mistakes) }));
     }
 
     logSession({
@@ -188,6 +184,7 @@ export default function App() {
     setActiveMode(mode);
     setQueue(q);
     setSessionMistakes([]);
+    setSessionCorrects([]);
     setSessionCorrect(0);
     setSessionTotal(0);
     setPracPhase("question");
@@ -234,32 +231,44 @@ export default function App() {
   // ── Start review ───────────────────────────────────────────────────────────
 
   const startReview = (op: "mult" | "div") => {
-    const pool = op === "div" ? progress.divMistakes : progress.mistakes;
-    if (pool.length === 0) return;
     isFinishingRef.current = false;
     sessionExpiredRef.current = false;
 
-    // Count how many times each pair appears — that's how often it was wrong.
+    const pool = op === "div" ? progress.divMistakes : progress.mistakes;
+
+    // Count how many times each pair has been wrong (higher = less familiar).
     const countMap = new Map<string, number>();
     for (const p of pool) {
-      const key = `${Math.min(p.a, p.b)}x${Math.max(p.a, p.b)}`;
+      const key = op === "div" ? `${p.a}x${p.b}` : `${Math.min(p.a, p.b)}x${Math.max(p.a, p.b)}`;
       countMap.set(key, (countMap.get(key) ?? 0) + 1);
     }
 
-    // Expand to both orderings, shuffle for variety within same frequency,
-    // then sort so higher-frequency (harder) pairs come first.
-    const expanded = pool.flatMap((p) =>
-      p.a === p.b ? [p] : [p, { ...p, a: p.b, b: p.a }]
-    );
-    const q = shuffle(expanded).sort((a, b) => {
-      const ka = `${Math.min(a.a, a.b)}x${Math.max(a.a, a.b)}`;
-      const kb = `${Math.min(b.a, b.b)}x${Math.max(b.a, b.b)}`;
-      return (countMap.get(kb) ?? 1) - (countMap.get(ka) ?? 1);
+    // All facts for this operation. Each fact appears (1 + wrongCount) times
+    // so unfamiliar facts are proportionally more common. Cap at 6× to avoid a
+    // runaway queue when a fact has been wrong many times.
+    const allFacts = op === "div" ? buildDivisionQueue() : buildInitialQueue();
+    const weighted: Pair[] = [];
+    for (const p of allFacts) {
+      const key = op === "div" ? `${p.a}x${p.b}` : `${Math.min(p.a, p.b)}x${Math.max(p.a, p.b)}`;
+      const reps = Math.min(6, 1 + (countMap.get(key) ?? 0));
+      for (let i = 0; i < reps; i++) {
+        weighted.push(p);
+        // Multiplication: also include reversed pair so both orders are practiced
+        if (op !== "div" && p.a !== p.b) weighted.push({ a: p.b, b: p.a });
+      }
+    }
+
+    // Shuffle within frequency tiers so it feels varied, harder facts come first.
+    const q = shuffle(weighted).sort((a, b) => {
+      const ka = op === "div" ? `${a.a}x${a.b}` : `${Math.min(a.a, a.b)}x${Math.max(a.a, a.b)}`;
+      const kb = op === "div" ? `${b.a}x${b.b}` : `${Math.min(b.a, b.b)}x${Math.max(b.a, b.b)}`;
+      return (countMap.get(kb) ?? 0) - (countMap.get(ka) ?? 0);
     });
 
     activeOpRef.current = op;
     setQueue(q);
     setSessionMistakes([]);
+    setSessionCorrects([]);
     setSessionCorrect(0);
     setSessionTotal(0);
     setPracPhase("question");
@@ -292,7 +301,8 @@ export default function App() {
     const expected = pair.op === "div" ? pair.a : pair.a * pair.b;
     const correct  = answer === expected;
 
-    if (!correct) setSessionMistakes((m) => [...m, pair]);
+    if (correct) setSessionCorrects((c) => [...c, pair]);
+    else setSessionMistakes((m) => [...m, pair]);
     setSessionCorrect((c) => c + (correct ? 1 : 0));
     setSessionTotal((t) => t + 1);
 
@@ -416,8 +426,6 @@ export default function App() {
 
       {phase === "lobby" && (
         <LobbyView
-          multMistakeCount={progress.mistakes.length}
-          divMistakeCount={progress.divMistakes.length}
           initialDone={initialDone}
           onReview={startReview}
           onInitialTest={() => setPhase("initial-welcome")}
@@ -519,9 +527,7 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
 
 // ─── Lobby ────────────────────────────────────────────────────────────────────
 
-function LobbyView({ multMistakeCount, divMistakeCount, initialDone, onReview, onInitialTest }: {
-  multMistakeCount: number;
-  divMistakeCount: number;
+function LobbyView({ initialDone, onReview, onInitialTest }: {
   initialDone: boolean;
   onReview: (op: "mult" | "div") => void;
   onInitialTest: () => void;
@@ -536,25 +542,15 @@ function LobbyView({ multMistakeCount, divMistakeCount, initialDone, onReview, o
 
       <div className="op-section">
         <p className="lobby-heading">Multiplication</p>
-        <button
-          className={`btn-op btn-practice ${multMistakeCount === 0 ? "disabled" : ""}`}
-          onClick={() => onReview("mult")}
-          disabled={multMistakeCount === 0}
-        >
+        <button className="btn-op btn-practice" onClick={() => onReview("mult")}>
           Practice
-          {multMistakeCount > 0 && <span className="review-count">{multMistakeCount}</span>}
         </button>
       </div>
 
       <div className="op-section">
         <p className="lobby-heading">Division</p>
-        <button
-          className={`btn-op btn-practice ${divMistakeCount === 0 ? "disabled" : ""}`}
-          onClick={() => onReview("div")}
-          disabled={divMistakeCount === 0}
-        >
+        <button className="btn-op btn-practice" onClick={() => onReview("div")}>
           Practice
-          {divMistakeCount > 0 && <span className="review-count">{divMistakeCount}</span>}
         </button>
       </div>
     </div>
