@@ -422,14 +422,14 @@ export default function App() {
   // ── Sign in ────────────────────────────────────────────────────────────────
 
   const handleSignIn = async (name: string) => {
-    saveStudentName(name);
-    setStudentName(name);
     const [done, multW, divW, durationStr] = await Promise.all([
       fetchInitialTestDone(name),
       fetchPairWeights(name, "mult"),
       fetchPairWeights(name, "div"),
       fetchSetting("practice_duration_secs", "300"),
     ]);
+    saveStudentName(name);
+    setStudentName(name);
     setInitialDone(done);
     setProgress({ mult: multW, div: divW });
     setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
