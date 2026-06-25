@@ -3,7 +3,7 @@ import {
   DURATIONS, buildInitialQueue, buildDivisionQueue, buildThreeMinQueue, shuffle,
   type Pair, type SessionMode, type FactStat,
 } from "./curriculum";
-import { checkStudent, logFact, logSession, fetchMistakes, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone } from "./supabase";
+import { checkStudent, logFact, logSession, fetchMistakes, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting } from "./supabase";
 import "./App.css";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
@@ -49,6 +49,7 @@ export default function App() {
   const [studentName, setStudentName]         = useState<string | null>(loadStudentName);
   const [progress, setProgress]               = useState<Progress>(loadProgress);
   const [initialDone, setInitialDone]         = useState<boolean>(false);
+  const [practiceDurationSecs, setPracticeDurationSecs] = useState<number>(300);
   const [phase, setPhase]                     = useState<AppPhase>("lobby");
   const [activeMode, setActiveMode]           = useState<SessionMode>("practice");
 
@@ -69,9 +70,10 @@ export default function App() {
   const questionStartRef = useRef<number>(Date.now());
 
   // Stable refs for timer/endSession callback
-  const sessionMistakesRef = useRef<Pair[]>([]);
-  const activeModeRef      = useRef<SessionMode>("practice");
-  const activeOpRef        = useRef<"mult" | "div">("mult");
+  const sessionMistakesRef  = useRef<Pair[]>([]);
+  const activeModeRef       = useRef<SessionMode>("practice");
+  const activeOpRef         = useRef<"mult" | "div">("mult");
+  const sessionExpiredRef   = useRef(false);
   const sessionCorrectRef  = useRef(0);
   const sessionTotalRef    = useRef(0);
   const studentNameRef     = useRef<string | null>(null);
@@ -176,6 +178,7 @@ export default function App() {
     }
 
     activeOpRef.current = op;
+    sessionExpiredRef.current = false;
     setActiveMode(mode);
     setQueue(q);
     setSessionMistakes([]);
@@ -184,12 +187,12 @@ export default function App() {
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
-    const timed = mode === "initial" || mode === "5min";
-    setSecondsLeft(timed ? DURATIONS[mode] : null);
-    setPhase("practice");
 
     if (timerRef.current) clearInterval(timerRef.current);
-    if (timed) {
+
+    if (mode === "initial") {
+      // Hard timer: auto-ends at 10 min regardless of question boundary
+      setSecondsLeft(DURATIONS["initial"]);
       timerRef.current = setInterval(() => {
         setSecondsLeft((s) => {
           if (s === null || s <= 1) {
@@ -201,7 +204,25 @@ export default function App() {
           return s - 1;
         });
       }, 1000);
+    } else if (mode === "practice") {
+      // Soft timer: marks expired, ends at next question boundary
+      setSecondsLeft(practiceDurationSecs);
+      timerRef.current = setInterval(() => {
+        setSecondsLeft((s) => {
+          if (s === null || s <= 1) {
+            clearInterval(timerRef.current!);
+            timerRef.current = null;
+            sessionExpiredRef.current = true;
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+    } else {
+      setSecondsLeft(null);
     }
+
+    setPhase("practice");
   };
 
   // ── Start review ───────────────────────────────────────────────────────────
@@ -286,11 +307,9 @@ export default function App() {
       newQueue = [...queue.slice(1), pair];
     } else {
       newQueue = queue.slice(1);
-      // Learn ends naturally when all facts have been seen 4 times
-      // initial + 5-min: end when queue exhausted (all facts seen once)
     }
 
-    if (newQueue.length === 0) {
+    if (newQueue.length === 0 || sessionExpiredRef.current) {
       endSession();
     } else {
       setQueue(newQueue);
@@ -328,12 +347,14 @@ export default function App() {
   const handleSignIn = async (name: string) => {
     saveStudentName(name);
     setStudentName(name);
-    const [done, mistakes] = await Promise.all([
+    const [done, mistakes, durationStr] = await Promise.all([
       fetchInitialTestDone(name),
       fetchMistakes(name),
+      fetchSetting("practice_duration_secs", "300"),
     ]);
     setInitialDone(done);
     setProgress({ mistakes, divMistakes: [] });
+    setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
     setPhase(done ? "lobby" : "initial-welcome");
   };
 

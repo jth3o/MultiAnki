@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   fetchTeacherStudents, fetchAllFactProgress, fetchAllFacts, fetchAllSessions,
+  fetchSetting, upsertSetting,
   type TeacherStudent, type TeacherFactProgress, type TeacherFactRecord, type TeacherSession,
 } from "./supabase";
 import "./teacher.css";
@@ -312,6 +313,63 @@ function StudentDetail({
   );
 }
 
+// ─── Session settings ─────────────────────────────────────────────────────────
+
+const DURATION_OPTIONS = [
+  { label: "1 minute",  value: 60  },
+  { label: "2 minutes", value: 120 },
+  { label: "3 minutes", value: 180 },
+  { label: "5 minutes", value: 300 },
+  { label: "10 minutes",value: 600 },
+];
+
+function SessionSettings() {
+  const [duration, setDuration]   = useState<number | null>(null);
+  const [saving, setSaving]       = useState(false);
+  const [saved, setSaved]         = useState(false);
+
+  useEffect(() => {
+    fetchSetting("practice_duration_secs", "300").then((v) =>
+      setDuration(parseInt(v, 10) || 300)
+    );
+  }, []);
+
+  const handleChange = async (val: number) => {
+    setDuration(val);
+    setSaving(true);
+    setSaved(false);
+    await upsertSetting("practice_duration_secs", String(val));
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  if (duration === null) return null;
+
+  return (
+    <div className="settings-section">
+      <p className="section-title">Session settings</p>
+      <div className="settings-row">
+        <label className="settings-label">Practice session length</label>
+        <select
+          className="settings-select"
+          value={duration}
+          onChange={(e) => handleChange(Number(e.target.value))}
+          disabled={saving}
+        >
+          {DURATION_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        {saved && <span className="settings-saved">Saved</span>}
+      </div>
+      <p className="settings-hint">
+        Students will finish a practice session after this amount of time — their current question completes first, then the session ends.
+      </p>
+    </div>
+  );
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard({
@@ -341,6 +399,8 @@ function Dashboard({
       <header className="teacher-header">
         <span className="teacher-logo">MultiAnki — Teacher</span>
       </header>
+
+      <SessionSettings />
 
       <Heatmap facts={facts} progress={progress} title="Class overview — fact performance across all students" />
 

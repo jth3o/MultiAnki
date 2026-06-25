@@ -148,6 +148,17 @@ export interface TeacherSession {
   created_at: string;
 }
 
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+export async function fetchSetting(key: string, fallback: string): Promise<string> {
+  const { data } = await supabase.from("settings").select("value").eq("key", key).maybeSingle();
+  return data?.value ?? fallback;
+}
+
+export async function upsertSetting(key: string, value: string): Promise<void> {
+  await supabase.from("settings").upsert({ key, value }, { onConflict: "key" });
+}
+
 export async function fetchTeacherStudents(): Promise<TeacherStudent[]> {
   const { data } = await supabase.from("students").select("name, created_at").order("name");
   return data ?? [];

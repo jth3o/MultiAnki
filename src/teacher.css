@@ -326,6 +326,52 @@
   margin-bottom: 0.75rem;
 }
 
+/* ── Settings section ────────────────────────────────────────────────────── */
+
+.settings-section {
+  margin-bottom: 2rem;
+  padding: 1.25rem 1.5rem;
+  background: #fff;
+  border: 1px solid #e2e0dc;
+  border-radius: 12px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.settings-label {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #1a1a18;
+}
+
+.settings-select {
+  font-size: 0.9375rem;
+  font-family: "Inter", system-ui, sans-serif;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #f9f8f6;
+  color: #1a1a18;
+  cursor: pointer;
+}
+
+.settings-saved {
+  font-size: 0.875rem;
+  color: #16a34a;
+  font-weight: 500;
+}
+
+.settings-hint {
+  font-size: 0.8125rem;
+  color: #6b6b68;
+  line-height: 1.5;
+}
+
 /* ── Students table ──────────────────────────────────────────────────────── */
 
 .students-section { margin-top: 0.5rem; }
