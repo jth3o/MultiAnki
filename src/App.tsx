@@ -442,7 +442,11 @@ export default function App() {
       )}
 
       {phase === "session-done" && sessionResult && (
-        <SessionDoneView result={sessionResult} onContinue={() => setPhase("lobby")} />
+        <SessionDoneView
+          result={sessionResult}
+          onContinue={() => setPhase("lobby")}
+          onRepeat={activeMode !== "initial" ? () => startReview(activeOpRef.current) : undefined}
+        />
       )}
     </div>
   );
@@ -625,15 +629,16 @@ function PracticeView({ label, tag, secondsLeft, pair, input, onInput, onKeyDown
 
 // ─── Session done ─────────────────────────────────────────────────────────────
 
-function SessionDoneView({ result, onContinue }: { result: SessionResult; onContinue: () => void }) {
+function SessionDoneView({ result, onContinue, onRepeat }: {
+  result: SessionResult;
+  onContinue: () => void;
+  onRepeat?: () => void;
+}) {
   const isInitial = result.mode === "initial";
-  const isReview  = result.mode === "review";
 
   const headline = isInitial
     ? `Amazing work — you answered ${result.total} facts!`
-    : isReview
-      ? `Nice job — you reviewed ${result.total} fact${result.total !== 1 ? "s" : ""}!`
-      : `Well done — you got through ${result.total} fact${result.total !== 1 ? "s" : ""}!`;
+    : `Nice job — you got through ${result.total} fact${result.total !== 1 ? "s" : ""}!`;
 
   const detail = isInitial
     ? `You got ${result.correct} right. Practice is ready below.`
@@ -646,7 +651,8 @@ function SessionDoneView({ result, onContinue }: { result: SessionResult; onCont
       <p className="done-headline">{headline}</p>
       <p className="done-stat">{result.correct} / {result.total}</p>
       <p className="done-detail">{detail}</p>
-      <button className="btn-primary" onClick={onContinue}>
+      {onRepeat && <button className="btn-primary" onClick={onRepeat}>Go again</button>}
+      <button className={onRepeat ? "btn-ghost" : "btn-primary"} onClick={onContinue}>
         {isInitial ? "Go to practice" : "Back"}
       </button>
     </div>
