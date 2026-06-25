@@ -164,6 +164,7 @@ export interface TeacherFactProgress {
 
 export interface TeacherFactRecord {
   student_name: string;
+  lesson: string;
   a: number;
   b: number;
   correct: boolean;
@@ -202,7 +203,7 @@ export async function fetchAllFactProgress(): Promise<TeacherFactProgress[]> {
 }
 
 export async function fetchAllFacts(): Promise<TeacherFactRecord[]> {
-  const { data } = await supabase.from("facts").select("student_name, a, b, correct, time_seconds, session_mode");
+  const { data } = await supabase.from("facts").select("student_name, lesson, a, b, correct, time_seconds, session_mode");
   return data ?? [];
 }
 

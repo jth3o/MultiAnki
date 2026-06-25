@@ -15,6 +15,10 @@ function normKey(a: number, b: number) {
   return `${Math.min(a, b)}x${Math.max(a, b)}`;
 }
 
+function divKey(a: number, b: number) {
+  return `${a}x${b}`;
+}
+
 interface CellStat {
   timesCorrect: number;
   timesWrong: number;
@@ -75,22 +79,32 @@ function emptyCell(): CellStat {
 function buildStudentStats(
   facts: TeacherFactRecord[],
   progress: TeacherFactProgress[],
-  studentName: string
+  studentName: string,
+  op: "mult" | "div",
 ): Map<string, CellStat> {
   const map = new Map<string, CellStat>();
+  const key = op === "div"
+    ? (a: number, b: number) => divKey(a, b)
+    : (a: number, b: number) => normKey(a, b);
+  const opFacts = facts.filter((f) =>
+    f.student_name === studentName &&
+    (op === "div" ? f.lesson === "Division" : f.lesson !== "Division")
+  );
 
-  for (const f of facts.filter((f) => f.student_name === studentName)) {
-    const key = normKey(f.a, f.b);
-    if (!map.has(key)) map.set(key, emptyCell());
-    const s = map.get(key)!;
+  for (const f of opFacts) {
+    const k = key(f.a, f.b);
+    if (!map.has(k)) map.set(k, emptyCell());
+    const s = map.get(k)!;
     if (f.correct) s.timesCorrect++; else s.timesWrong++;
     if (f.time_seconds != null) { s.totalTime += f.time_seconds; s.timeCount++; }
   }
 
-  for (const p of progress.filter((p) => p.student_name === studentName)) {
-    const key = normKey(p.a, p.b);
-    if (!map.has(key)) map.set(key, emptyCell());
-    map.get(key)!.mastered = p.mastered;
+  if (op === "mult") {
+    for (const p of progress.filter((p) => p.student_name === studentName)) {
+      const k = normKey(p.a, p.b);
+      if (!map.has(k)) map.set(k, emptyCell());
+      map.get(k)!.mastered = p.mastered;
+    }
   }
 
   return map;
@@ -99,27 +113,36 @@ function buildStudentStats(
 function buildClassStats(
   facts: TeacherFactRecord[],
   progress: TeacherFactProgress[],
-  students: string[]
+  students: string[],
+  op: "mult" | "div",
 ): Map<string, CellStat> {
   const totals = new Map<string, { correct: number; wrong: number; masteredCount: number; totalTime: number; timeCount: number }>();
+  const key = op === "div"
+    ? (a: number, b: number) => divKey(a, b)
+    : (a: number, b: number) => normKey(a, b);
+  const opFacts = facts.filter((f) =>
+    op === "div" ? f.lesson === "Division" : f.lesson !== "Division"
+  );
 
-  for (const f of facts) {
-    const key = normKey(f.a, f.b);
-    if (!totals.has(key)) totals.set(key, { correct: 0, wrong: 0, masteredCount: 0, totalTime: 0, timeCount: 0 });
-    const t = totals.get(key)!;
+  for (const f of opFacts) {
+    const k = key(f.a, f.b);
+    if (!totals.has(k)) totals.set(k, { correct: 0, wrong: 0, masteredCount: 0, totalTime: 0, timeCount: 0 });
+    const t = totals.get(k)!;
     if (f.correct) t.correct++; else t.wrong++;
     if (f.time_seconds != null) { t.totalTime += f.time_seconds; t.timeCount++; }
   }
 
-  for (const p of progress) {
-    const key = normKey(p.a, p.b);
-    if (!totals.has(key)) totals.set(key, { correct: 0, wrong: 0, masteredCount: 0, totalTime: 0, timeCount: 0 });
-    if (p.mastered) totals.get(key)!.masteredCount++;
+  if (op === "mult") {
+    for (const p of progress) {
+      const k = normKey(p.a, p.b);
+      if (!totals.has(k)) totals.set(k, { correct: 0, wrong: 0, masteredCount: 0, totalTime: 0, timeCount: 0 });
+      if (p.mastered) totals.get(k)!.masteredCount++;
+    }
   }
 
   const result = new Map<string, CellStat>();
-  for (const [key, t] of totals) {
-    result.set(key, {
+  for (const [k, t] of totals) {
+    result.set(k, {
       timesCorrect: t.correct,
       timesWrong: t.wrong,
       mastered: t.masteredCount >= Math.ceil(students.length / 2),
@@ -148,7 +171,8 @@ function Heatmap({ facts, progress, studentName, title }: {
   studentName?: string;
   title?: string;
 }) {
-  const [mode, setMode] = useState<"accuracy" | "time">("accuracy");
+  const [op, setOp]       = useState<"mult" | "div">("mult");
+  const [mode, setMode]   = useState<"accuracy" | "time">("accuracy");
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [selected, setSelected] = useState<{ a: number; b: number; stat: CellStat } | null>(null);
 
@@ -156,17 +180,30 @@ function Heatmap({ facts, progress, studentName, title }: {
     ? facts
     : facts.filter((f) => f.session_mode === filter);
 
+  const allStudents = [...new Set(facts.map((f) => f.student_name))];
   const stats = studentName
-    ? buildStudentStats(filteredFacts, progress, studentName)
-    : buildClassStats(filteredFacts, progress, [...new Set(facts.map((f) => f.student_name))]);
+    ? buildStudentStats(filteredFacts, progress, studentName, op)
+    : buildClassStats(filteredFacts, progress, allStudents, op);
+
+  const statKey = (a: number, b: number) => op === "div" ? divKey(a, b) : normKey(a, b);
+  const cellLabel = (a: number, b: number) =>
+    op === "div" ? `${a * b}÷${b}` : `${a}×${b}`;
+  const factLabel = (a: number, b: number) =>
+    op === "div" ? `${a * b} ÷ ${b} = ${a}` : `${a} × ${b} = ${a * b}`;
 
   return (
     <div className="heatmap-wrap">
       <div className="heatmap-header">
         {title && <p className="heatmap-title">{title}</p>}
-        <div className="hm-toggle">
-          <button className={mode === "accuracy" ? "active" : ""} onClick={() => setMode("accuracy")}>Accuracy</button>
-          <button className={mode === "time" ? "active" : ""} onClick={() => setMode("time")}>Time</button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <div className="hm-toggle">
+            <button className={op === "mult" ? "active" : ""} onClick={() => { setOp("mult"); setSelected(null); }}>Mult</button>
+            <button className={op === "div"  ? "active" : ""} onClick={() => { setOp("div");  setSelected(null); }}>Div</button>
+          </div>
+          <div className="hm-toggle">
+            <button className={mode === "accuracy" ? "active" : ""} onClick={() => setMode("accuracy")}>Accuracy</button>
+            <button className={mode === "time"     ? "active" : ""} onClick={() => setMode("time")}>Time</button>
+          </div>
         </div>
       </div>
 
@@ -193,7 +230,7 @@ function Heatmap({ facts, progress, studentName, title }: {
             <div key={`r${ai}`} className="hm-header">{ai + 1}</div>
             {Array.from({ length: 12 }, (_, bi) => {
               const a = ai + 1, b = bi + 1;
-              const stat = stats.get(normKey(a, b));
+              const stat = stats.get(statKey(a, b));
               const total = stat ? stat.timesCorrect + stat.timesWrong : 0;
               const avg = stat ? avgTime(stat) : null;
               return (
@@ -203,7 +240,7 @@ function Heatmap({ facts, progress, studentName, title }: {
                   style={{ background: cellColor(stat, mode), color: cellTextColor(stat, mode), cursor: total > 0 ? "pointer" : "default", outline: selected?.a === a && selected?.b === b ? "2px solid #2563eb" : "none" }}
                   onClick={() => stat && total > 0 && setSelected(selected?.a === a && selected?.b === b ? null : { a, b, stat })}
                 >
-                  {mode === "time" && avg !== null ? `${avg}s` : total > 0 ? `${a}×${b}` : ""}
+                  {mode === "time" && avg !== null ? `${avg}s` : total > 0 ? cellLabel(a, b) : ""}
                 </div>
               );
             })}
@@ -213,7 +250,7 @@ function Heatmap({ facts, progress, studentName, title }: {
 
       {selected && (
         <div className="hm-selected">
-          <span className="hm-selected-fact">{selected.a} × {selected.b} = {selected.a * selected.b}</span>
+          <span className="hm-selected-fact">{factLabel(selected.a, selected.b)}</span>
           <span>{selected.stat.timesCorrect} correct / {selected.stat.timesCorrect + selected.stat.timesWrong} seen</span>
           {avgTime(selected.stat) !== null && <span>avg {avgTime(selected.stat)}s per answer</span>}
           {selected.stat.mastered && <span className="hm-mastered">✓ Mastered</span>}
@@ -255,9 +292,11 @@ function StudentDetail({
   sessions: TeacherSession[];
   onBack: () => void;
 }) {
-  const allStats = buildStudentStats(facts, progress, student.name);
+  const allStats = buildStudentStats(facts, progress, student.name, "mult");
   const masteredCount = [...allStats.values()].filter((s) => s.mastered).length;
   const totalSeen = [...allStats.values()].filter((s) => s.timesCorrect + s.timesWrong > 0).length;
+  const divStats = buildStudentStats(facts, progress, student.name, "div");
+  const divSeen = [...divStats.values()].filter((s) => s.timesCorrect + s.timesWrong > 0).length;
   const studentSessions = sessions.filter((s) => s.student_name === student.name).slice(0, 10);
 
   return (
@@ -272,15 +311,15 @@ function StudentDetail({
         <div className="detail-stats">
           <div className="detail-stat">
             <span className="ds-value">{masteredCount}</span>
-            <span className="ds-label">Mastered</span>
+            <span className="ds-label">Mult mastered</span>
           </div>
           <div className="detail-stat">
-            <span className="ds-value">{totalSeen}</span>
-            <span className="ds-label">Facts seen</span>
+            <span className="ds-value">{totalSeen} / 78</span>
+            <span className="ds-label">Mult seen</span>
           </div>
           <div className="detail-stat">
-            <span className="ds-value">{78 - totalSeen}</span>
-            <span className="ds-label">Not yet seen</span>
+            <span className="ds-value">{divSeen} / 144</span>
+            <span className="ds-label">Div seen</span>
           </div>
         </div>
       </div>
@@ -415,8 +454,7 @@ function Dashboard({
           </thead>
           <tbody>
             {students.map((student) => {
-              const stats = buildStudentStats(facts, progress, student.name);
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              const stats = buildStudentStats(facts, progress, student.name, "mult");
               const mastered = [...stats.values()].filter((s) => s.mastered).length;
               const seen = [...stats.values()].filter((s) => s.timesCorrect + s.timesWrong > 0).length;
               const lastSession = sessions.find((s) => s.student_name === student.name);
