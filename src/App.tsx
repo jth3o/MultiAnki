@@ -8,12 +8,17 @@ import "./App.css";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
-const NAME_KEY    = "multianki_student";
-const STORAGE_KEY = "multianki_v3";
+const NAME_KEY      = "multianki_student";
+const STORAGE_KEY   = "multianki_v3";
+const INIT_DONE_KEY = "multianki_init_done";
 
 function loadStudentName(): string | null { return localStorage.getItem(NAME_KEY); }
 function saveStudentName(n: string) { localStorage.setItem(NAME_KEY, n); }
 function clearStudentName() { localStorage.removeItem(NAME_KEY); }
+
+function loadInitialDone(): boolean { return localStorage.getItem(INIT_DONE_KEY) === "true"; }
+function saveInitialDone(v: boolean) { localStorage.setItem(INIT_DONE_KEY, v ? "true" : "false"); }
+function clearInitialDone() { localStorage.removeItem(INIT_DONE_KEY); }
 
 interface Progress { mistakes: Pair[]; divMistakes: Pair[]; }
 function loadProgress(): Progress {
@@ -48,7 +53,7 @@ interface SessionResult {
 export default function App() {
   const [studentName, setStudentName]         = useState<string | null>(loadStudentName);
   const [progress, setProgress]               = useState<Progress>(loadProgress);
-  const [initialDone, setInitialDone]         = useState<boolean>(false);
+  const [initialDone, setInitialDone]         = useState<boolean>(loadInitialDone);
   const [practiceDurationSecs, setPracticeDurationSecs] = useState<number>(300);
   const [phase, setPhase]                     = useState<AppPhase>("lobby");
   const [activeMode, setActiveMode]           = useState<SessionMode>("practice");
@@ -114,6 +119,7 @@ export default function App() {
     if (curPhase === "practice") {
       if (mode === "initial") {
         markInitialTestDone(student);
+        saveInitialDone(true);
         setInitialDone(true);
         setProgress((prev) => ({ ...prev, mistakes: [...prev.mistakes, ...mistakes] }));
       } else if (op === "div") {
@@ -370,6 +376,7 @@ export default function App() {
       fetchMistakes(name),
       fetchSetting("practice_duration_secs", "300"),
     ]);
+    saveInitialDone(done);
     setInitialDone(done);
     setProgress({ mistakes, divMistakes: [] });
     setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
@@ -385,6 +392,7 @@ export default function App() {
   const signOut = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     clearStudentName();
+    clearInitialDone();
     setStudentName(null);
     setInitialDone(false);
     setPhase("lobby");
