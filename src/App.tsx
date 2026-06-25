@@ -411,7 +411,6 @@ export default function App() {
           multMistakeCount={progress.mistakes.length}
           divMistakeCount={progress.divMistakes.length}
           initialDone={initialDone}
-          onPractice={(op) => startSession(op, "practice")}
           onReview={startReview}
           onInitialTest={() => setPhase("initial-welcome")}
         />
@@ -423,11 +422,9 @@ export default function App() {
 
       {(phase === "practice" || phase === "review") && queue.length > 0 && (
         <PracticeView
-          label={phase === "review"
-            ? (activeOpRef.current === "div" ? "Division Review" : "Multiplication Review")
-            : activeMode === "initial"
-              ? "Initial Test"
-              : activeOpRef.current === "div" ? "Division" : "Multiplication"}
+          label={activeMode === "initial"
+            ? "Initial Test"
+            : activeOpRef.current === "div" ? "Division" : "Multiplication"}
           tag=""
           secondsLeft={secondsLeft}
           pair={queue[0]}
@@ -510,11 +507,10 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
 
 // ─── Lobby ────────────────────────────────────────────────────────────────────
 
-function LobbyView({ multMistakeCount, divMistakeCount, initialDone, onPractice, onReview, onInitialTest }: {
+function LobbyView({ multMistakeCount, divMistakeCount, initialDone, onReview, onInitialTest }: {
   multMistakeCount: number;
   divMistakeCount: number;
   initialDone: boolean;
-  onPractice: (op: "mult" | "div") => void;
   onReview: (op: "mult" | "div") => void;
   onInitialTest: () => void;
 }) {
@@ -528,32 +524,26 @@ function LobbyView({ multMistakeCount, divMistakeCount, initialDone, onPractice,
 
       <div className="op-section">
         <p className="lobby-heading">Multiplication</p>
-        <div className="op-btns">
-          <button className="btn-op btn-practice" onClick={() => onPractice("mult")}>Practice</button>
-          <button
-            className={`btn-op btn-review-op ${multMistakeCount === 0 ? "disabled" : ""}`}
-            onClick={() => onReview("mult")}
-            disabled={multMistakeCount === 0}
-          >
-            Review
-            {multMistakeCount > 0 && <span className="review-count">{multMistakeCount}</span>}
-          </button>
-        </div>
+        <button
+          className={`btn-op btn-practice ${multMistakeCount === 0 ? "disabled" : ""}`}
+          onClick={() => onReview("mult")}
+          disabled={multMistakeCount === 0}
+        >
+          Practice
+          {multMistakeCount > 0 && <span className="review-count">{multMistakeCount}</span>}
+        </button>
       </div>
 
       <div className="op-section">
         <p className="lobby-heading">Division</p>
-        <div className="op-btns">
-          <button className="btn-op btn-practice" onClick={() => onPractice("div")}>Practice</button>
-          <button
-            className={`btn-op btn-review-op ${divMistakeCount === 0 ? "disabled" : ""}`}
-            onClick={() => onReview("div")}
-            disabled={divMistakeCount === 0}
-          >
-            Review
-            {divMistakeCount > 0 && <span className="review-count">{divMistakeCount}</span>}
-          </button>
-        </div>
+        <button
+          className={`btn-op btn-practice ${divMistakeCount === 0 ? "disabled" : ""}`}
+          onClick={() => onReview("div")}
+          disabled={divMistakeCount === 0}
+        >
+          Practice
+          {divMistakeCount > 0 && <span className="review-count">{divMistakeCount}</span>}
+        </button>
       </div>
     </div>
   );
