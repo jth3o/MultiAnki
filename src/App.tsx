@@ -231,27 +231,45 @@ export default function App() {
     const pool = op === "div" ? progress.divMistakes : progress.mistakes;
     if (pool.length === 0) return;
     isFinishingRef.current = false;
+    sessionExpiredRef.current = false;
+
+    // Count how many times each pair appears — that's how often it was wrong.
+    const countMap = new Map<string, number>();
+    for (const p of pool) {
+      const key = `${Math.min(p.a, p.b)}x${Math.max(p.a, p.b)}`;
+      countMap.set(key, (countMap.get(key) ?? 0) + 1);
+    }
+
+    // Expand to both orderings, shuffle for variety within same frequency,
+    // then sort so higher-frequency (harder) pairs come first.
     const expanded = pool.flatMap((p) =>
       p.a === p.b ? [p] : [p, { ...p, a: p.b, b: p.a }]
     );
+    const q = shuffle(expanded).sort((a, b) => {
+      const ka = `${Math.min(a.a, a.b)}x${Math.max(a.a, a.b)}`;
+      const kb = `${Math.min(b.a, b.b)}x${Math.max(b.a, b.b)}`;
+      return (countMap.get(kb) ?? 1) - (countMap.get(ka) ?? 1);
+    });
+
     activeOpRef.current = op;
-    setQueue(shuffle(expanded));
+    setQueue(q);
     setSessionMistakes([]);
     setSessionCorrect(0);
     setSessionTotal(0);
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
-    setSecondsLeft(300); // 5 minutes
+    setSecondsLeft(practiceDurationSecs);
     setPhase("review");
 
+    // Soft timer: marks expired, ends at next question boundary
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setSecondsLeft((s) => {
         if (s === null || s <= 1) {
           clearInterval(timerRef.current!);
           timerRef.current = null;
-          endSession();
+          sessionExpiredRef.current = true;
           return 0;
         }
         return s - 1;
