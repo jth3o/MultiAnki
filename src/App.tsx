@@ -389,7 +389,7 @@ export default function App() {
             : activeMode === "initial"
               ? "Initial Test"
               : activeOpRef.current === "div" ? "Division" : "Multiplication"}
-          tag={`${queue.length} remaining`}
+          tag=""
           secondsLeft={secondsLeft}
           pair={queue[0]}
           input={pracInput}
