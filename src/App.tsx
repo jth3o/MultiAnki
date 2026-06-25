@@ -9,8 +9,11 @@ import "./App.css";
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
 const NAME_KEY      = "multianki_student";
-const STORAGE_KEY   = "multianki_v3";
+const MULT_KEY      = "multianki_mult";
+const DIV_KEY       = "multianki_div";
 const INIT_DONE_KEY = "multianki_init_done";
+
+const SLOW_THRESHOLD_SECS = 5; // correct answers taking longer than this add slow weight
 
 function loadStudentName(): string | null { return localStorage.getItem(NAME_KEY); }
 function saveStudentName(n: string) { localStorage.setItem(NAME_KEY, n); }
@@ -20,13 +23,24 @@ function loadInitialDone(): boolean { return localStorage.getItem(INIT_DONE_KEY)
 function saveInitialDone(v: boolean) { localStorage.setItem(INIT_DONE_KEY, v ? "true" : "false"); }
 function clearInitialDone() { localStorage.removeItem(INIT_DONE_KEY); }
 
-interface Progress { mistakes: Pair[]; divMistakes: Pair[]; }
+// Multiplication and division stored separately so resetting one doesn't affect the other.
+interface OpProgress { mistakes: Pair[]; slowPairs: Pair[]; }
+interface Progress { mult: OpProgress; div: OpProgress; }
+
+function emptyOp(): OpProgress { return { mistakes: [], slowPairs: [] }; }
+
 function loadProgress(): Progress {
-  try { const r = localStorage.getItem(STORAGE_KEY); if (r) return JSON.parse(r); } catch { /**/ }
-  return { mistakes: [], divMistakes: [] };
+  const load = (key: string): OpProgress => {
+    try { const r = localStorage.getItem(key); if (r) return JSON.parse(r); } catch { /**/ }
+    return emptyOp();
+  };
+  return { mult: load(MULT_KEY), div: load(DIV_KEY) };
 }
 function saveProgress(p: Progress) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); } catch { /**/ }
+  try {
+    localStorage.setItem(MULT_KEY, JSON.stringify(p.mult));
+    localStorage.setItem(DIV_KEY, JSON.stringify(p.div));
+  } catch { /**/ }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -62,6 +76,7 @@ export default function App() {
   const [queue, setQueue]                     = useState<Pair[]>([]);
   const [sessionMistakes, setSessionMistakes] = useState<Pair[]>([]);
   const [sessionCorrects, setSessionCorrects] = useState<Pair[]>([]);
+  const [sessionSlows, setSessionSlows]       = useState<Pair[]>([]);
   const [pracPhase, setPracPhase]             = useState<"question" | "feedback">("question");
   const [pracInput, setPracInput]             = useState("");
   const [pracFeedback, setPracFeedback]       = useState<PracticeFeedback | null>(null);
@@ -78,6 +93,7 @@ export default function App() {
   // Stable refs for timer/endSession callback
   const sessionMistakesRef  = useRef<Pair[]>([]);
   const sessionCorrectsRef  = useRef<Pair[]>([]);
+  const sessionSlowsRef     = useRef<Pair[]>([]);
   const activeModeRef       = useRef<SessionMode>("practice");
   const activeOpRef         = useRef<"mult" | "div">("mult");
   const sessionExpiredRef   = useRef(false);
@@ -88,6 +104,7 @@ export default function App() {
 
   useEffect(() => { sessionMistakesRef.current = sessionMistakes; },  [sessionMistakes]);
   useEffect(() => { sessionCorrectsRef.current = sessionCorrects; },  [sessionCorrects]);
+  useEffect(() => { sessionSlowsRef.current = sessionSlows; },        [sessionSlows]);
   useEffect(() => { activeModeRef.current = activeMode; },             [activeMode]);
   useEffect(() => { sessionCorrectRef.current = sessionCorrect; },     [sessionCorrect]);
   useEffect(() => { sessionTotalRef.current = sessionTotal; },         [sessionTotal]);
@@ -113,35 +130,45 @@ export default function App() {
 
     const mistakes  = sessionMistakesRef.current;
     const corrects  = sessionCorrectsRef.current;
+    const slows     = sessionSlowsRef.current;
     const mode      = activeModeRef.current;
     const op        = activeOpRef.current;
     const correct   = sessionCorrectRef.current;
     const total     = sessionTotalRef.current;
     const student   = studentNameRef.current ?? "";
-    const curPhase  = phaseRef.current;
 
-    const updatePool = (pool: Pair[]): Pair[] => {
-      // Remove one occurrence per correctly-answered pair (they're improving)
-      let next = [...pool];
+    const updateOp = (prev: OpProgress): OpProgress => {
+      // mistakes pool: remove one occurrence per correct answer, add wrong answers
+      let nextMistakes = [...prev.mistakes];
       for (const c of corrects) {
-        const idx = next.findIndex((p) => p.a === c.a && p.b === c.b);
-        if (idx >= 0) next.splice(idx, 1);
+        const idx = nextMistakes.findIndex((p) => p.a === c.a && p.b === c.b);
+        if (idx >= 0) nextMistakes.splice(idx, 1);
       }
-      // Add wrong answers (increases their weight for next session)
-      return [...next, ...mistakes];
+      nextMistakes = [...nextMistakes, ...mistakes];
+
+      // slow pool: remove one occurrence per fast correct answer, add new slows
+      let nextSlows = [...prev.slowPairs];
+      for (const c of corrects.filter(c => !slows.some(s => s.a === c.a && s.b === c.b))) {
+        const idx = nextSlows.findIndex((p) => p.a === c.a && p.b === c.b);
+        if (idx >= 0) nextSlows.splice(idx, 1);
+      }
+      nextSlows = [...nextSlows, ...slows];
+
+      return { mistakes: nextMistakes, slowPairs: nextSlows };
     };
 
     if (mode === "initial") {
       markInitialTestDone(student);
       saveInitialDone(true);
       setInitialDone(true);
-      setProgress((prev) => ({ ...prev, mistakes: [...prev.mistakes, ...mistakes] }));
+      setProgress((prev) => ({ ...prev, mult: { ...prev.mult, mistakes: [...prev.mult.mistakes, ...mistakes] } }));
     } else if (op === "div") {
-      setProgress((prev) => ({ ...prev, divMistakes: updatePool(prev.divMistakes) }));
+      setProgress((prev) => ({ ...prev, div: updateOp(prev.div) }));
     } else {
-      setProgress((prev) => ({ ...prev, mistakes: updatePool(prev.mistakes) }));
+      setProgress((prev) => ({ ...prev, mult: updateOp(prev.mult) }));
     }
 
+    const curPhase = phaseRef.current;
     logSession({
       student_name: student,
       session_type: curPhase === "review" ? "review" : mode,
@@ -185,6 +212,7 @@ export default function App() {
     setQueue(q);
     setSessionMistakes([]);
     setSessionCorrects([]);
+    setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
     setPracPhase("question");
@@ -234,41 +262,56 @@ export default function App() {
     isFinishingRef.current = false;
     sessionExpiredRef.current = false;
 
-    const pool = op === "div" ? progress.divMistakes : progress.mistakes;
+    const opProgress = op === "div" ? progress.div : progress.mult;
 
-    // Count how many times each pair has been wrong (higher = less familiar).
-    const countMap = new Map<string, number>();
-    for (const p of pool) {
-      const key = op === "div" ? `${p.a}x${p.b}` : `${Math.min(p.a, p.b)}x${Math.max(p.a, p.b)}`;
-      countMap.set(key, (countMap.get(key) ?? 0) + 1);
+    const pairKey = (p: Pair) =>
+      op === "div" ? `${p.a}x${p.b}` : `${Math.min(p.a, p.b)}x${Math.max(p.a, p.b)}`;
+
+    // Wrong count: each occurrence in the pool = one time wrong
+    const wrongMap = new Map<string, number>();
+    for (const p of opProgress.mistakes) {
+      const k = pairKey(p);
+      wrongMap.set(k, (wrongMap.get(k) ?? 0) + 1);
     }
 
-    // All facts for this operation. Each fact appears (1 + wrongCount) times
-    // so unfamiliar facts are proportionally more common. Cap at 6× to avoid a
-    // runaway queue when a fact has been wrong many times.
+    // Slow count: each occurrence = one slow-but-correct answer
+    const slowMap = new Map<string, number>();
+    for (const p of opProgress.slowPairs) {
+      const k = pairKey(p);
+      slowMap.set(k, (slowMap.get(k) ?? 0) + 1);
+    }
+
+    // Each fact appears (1 + wrongCount*2 + floor(slowCount/2)) times,
+    // capped at 6. Wrong answers dominate; slow answers add a little extra.
     const allFacts = op === "div" ? buildDivisionQueue() : buildInitialQueue();
     const weighted: Pair[] = [];
     for (const p of allFacts) {
-      const key = op === "div" ? `${p.a}x${p.b}` : `${Math.min(p.a, p.b)}x${Math.max(p.a, p.b)}`;
-      const reps = Math.min(6, 1 + (countMap.get(key) ?? 0));
+      const k = pairKey(p);
+      const reps = Math.min(6, 1 + (wrongMap.get(k) ?? 0) * 2 + Math.floor((slowMap.get(k) ?? 0) / 2));
       for (let i = 0; i < reps; i++) {
         weighted.push(p);
-        // Multiplication: also include reversed pair so both orders are practiced
         if (op !== "div" && p.a !== p.b) weighted.push({ a: p.b, b: p.a });
       }
     }
 
-    // Shuffle within frequency tiers so it feels varied, harder facts come first.
+    // Combined score for sorting: harder facts come first
+    const scoreMap = new Map<string, number>();
+    for (const p of allFacts) {
+      const k = pairKey(p);
+      scoreMap.set(k, (wrongMap.get(k) ?? 0) * 2 + Math.floor((slowMap.get(k) ?? 0) / 2));
+    }
+
     const q = shuffle(weighted).sort((a, b) => {
-      const ka = op === "div" ? `${a.a}x${a.b}` : `${Math.min(a.a, a.b)}x${Math.max(a.a, a.b)}`;
-      const kb = op === "div" ? `${b.a}x${b.b}` : `${Math.min(b.a, b.b)}x${Math.max(b.a, b.b)}`;
-      return (countMap.get(kb) ?? 0) - (countMap.get(ka) ?? 0);
+      const ka = pairKey(a);
+      const kb = pairKey(b);
+      return (scoreMap.get(kb) ?? 0) - (scoreMap.get(ka) ?? 0);
     });
 
     activeOpRef.current = op;
     setQueue(q);
     setSessionMistakes([]);
     setSessionCorrects([]);
+    setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
     setPracPhase("question");
@@ -301,12 +344,16 @@ export default function App() {
     const expected = pair.op === "div" ? pair.a : pair.a * pair.b;
     const correct  = answer === expected;
 
-    if (correct) setSessionCorrects((c) => [...c, pair]);
-    else setSessionMistakes((m) => [...m, pair]);
+    const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
+
+    if (correct) {
+      setSessionCorrects((c) => [...c, pair]);
+      if (elapsed > SLOW_THRESHOLD_SECS) setSessionSlows((s) => [...s, pair]);
+    } else {
+      setSessionMistakes((m) => [...m, pair]);
+    }
     setSessionCorrect((c) => c + (correct ? 1 : 0));
     setSessionTotal((t) => t + 1);
-
-    const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
     const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
     const lessonLabel = activeModeRef.current === "initial" ? "Initial Test" : activeOpRef.current === "div" ? "Division" : "Multiplication";
     logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: answer, correct, time_seconds: correct ? elapsed : null });
@@ -366,9 +413,9 @@ export default function App() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (phase === "practice" && sessionMistakes.length > 0) {
       if (activeOpRef.current === "div") {
-        setProgress((prev) => ({ ...prev, divMistakes: [...prev.divMistakes, ...sessionMistakes] }));
+        setProgress((prev) => ({ ...prev, div: { ...prev.div, mistakes: [...prev.div.mistakes, ...sessionMistakes] } }));
       } else {
-        setProgress((prev) => ({ ...prev, mistakes: [...prev.mistakes, ...sessionMistakes] }));
+        setProgress((prev) => ({ ...prev, mult: { ...prev.mult, mistakes: [...prev.mult.mistakes, ...sessionMistakes] } }));
       }
     }
     setSecondsLeft(null);
@@ -388,7 +435,7 @@ export default function App() {
     ]);
     saveInitialDone(done);
     setInitialDone(done);
-    setProgress({ mistakes, divMistakes: [] });
+    setProgress({ mult: { mistakes, slowPairs: [] }, div: emptyOp() });
     setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
     setPhase(done ? "lobby" : "initial-welcome");
   };
@@ -406,7 +453,7 @@ export default function App() {
     setStudentName(null);
     setInitialDone(false);
     setPhase("lobby");
-    setProgress({ mistakes: [], divMistakes: [] });
+    setProgress({ mult: emptyOp(), div: emptyOp() });
   };
 
   return (
