@@ -1,32 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  LESSONS, DURATIONS, buildInitialQueue, buildFiveMinQueue, buildThreeMinQueue, shuffle,
-  type Pair, type Lesson, type SessionMode, type FactStat,
+  DURATIONS, buildInitialQueue, buildDivisionQueue, buildThreeMinQueue, shuffle,
+  type Pair, type SessionMode, type FactStat,
 } from "./curriculum";
 import { checkStudent, logFact, logSession, fetchMistakes, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone } from "./supabase";
 import "./App.css";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
-const NAME_KEY     = "multianki_student";
-const PRETEST_KEY  = "multianki_pretests";
-const STORAGE_KEY  = "multianki_v2";
+const NAME_KEY    = "multianki_student";
+const STORAGE_KEY = "multianki_v3";
 
 function loadStudentName(): string | null { return localStorage.getItem(NAME_KEY); }
 function saveStudentName(n: string) { localStorage.setItem(NAME_KEY, n); }
 function clearStudentName() { localStorage.removeItem(NAME_KEY); }
 
-function loadPretests(): Set<string> {
-  try { const r = localStorage.getItem(PRETEST_KEY); if (r) return new Set(JSON.parse(r)); } catch { /**/ }
-  return new Set();
-}
-function savePretests(s: Set<string>) { localStorage.setItem(PRETEST_KEY, JSON.stringify([...s])); }
-
-
-interface Progress { mistakes: Pair[]; }
+interface Progress { mistakes: Pair[]; divMistakes: Pair[]; }
 function loadProgress(): Progress {
   try { const r = localStorage.getItem(STORAGE_KEY); if (r) return JSON.parse(r); } catch { /**/ }
-  return { mistakes: [] };
+  return { mistakes: [], divMistakes: [] };
 }
 function saveProgress(p: Progress) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); } catch { /**/ }
@@ -46,7 +38,6 @@ interface PracticeFeedback { correct: boolean; answer: number; }
 
 interface SessionResult {
   mode: SessionMode | "review";
-  lessonLabel?: string;
   correct: number;
   total: number;
   newMistakeCount: number;
@@ -57,11 +48,9 @@ interface SessionResult {
 export default function App() {
   const [studentName, setStudentName]         = useState<string | null>(loadStudentName);
   const [progress, setProgress]               = useState<Progress>(loadProgress);
-  const [completedPretests, setCompletedPretests] = useState<Set<string>>(loadPretests);
   const [initialDone, setInitialDone]         = useState<boolean>(false);
   const [phase, setPhase]                     = useState<AppPhase>("lobby");
-  const [activeLesson, setActiveLesson]       = useState<Lesson | null>(null);
-  const [activeMode, setActiveMode]           = useState<SessionMode>("5min");
+  const [activeMode, setActiveMode]           = useState<SessionMode>("practice");
 
   // Practice state
   const [queue, setQueue]                     = useState<Pair[]>([]);
@@ -81,15 +70,14 @@ export default function App() {
 
   // Stable refs for timer/endSession callback
   const sessionMistakesRef = useRef<Pair[]>([]);
-  const activeLessonRef    = useRef<Lesson | null>(null);
-  const activeModeRef      = useRef<SessionMode>("5min");
+  const activeModeRef      = useRef<SessionMode>("practice");
+  const activeOpRef        = useRef<"mult" | "div">("mult");
   const sessionCorrectRef  = useRef(0);
   const sessionTotalRef    = useRef(0);
   const studentNameRef     = useRef<string | null>(null);
   const phaseRef           = useRef<AppPhase>("lobby");
 
   useEffect(() => { sessionMistakesRef.current = sessionMistakes; },  [sessionMistakes]);
-  useEffect(() => { activeLessonRef.current = activeLesson; },         [activeLesson]);
   useEffect(() => { activeModeRef.current = activeMode; },             [activeMode]);
   useEffect(() => { sessionCorrectRef.current = sessionCorrect; },     [sessionCorrect]);
   useEffect(() => { sessionTotalRef.current = sessionTotal; },         [sessionTotal]);
@@ -113,47 +101,53 @@ export default function App() {
     isFinishingRef.current = true;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
-    const mistakes = sessionMistakesRef.current;
-    const lesson   = activeLessonRef.current;
-    const mode     = activeModeRef.current;
-    const correct  = sessionCorrectRef.current;
-    const total    = sessionTotalRef.current;
-    const student  = studentNameRef.current ?? "";
-    const curPhase = phaseRef.current;
+    const mistakes  = sessionMistakesRef.current;
+    const mode      = activeModeRef.current;
+    const op        = activeOpRef.current;
+    const correct   = sessionCorrectRef.current;
+    const total     = sessionTotalRef.current;
+    const student   = studentNameRef.current ?? "";
+    const curPhase  = phaseRef.current;
 
     if (curPhase === "practice") {
-      setProgress((prev) => ({ mistakes: [...prev.mistakes, ...mistakes] }));
-
       if (mode === "initial") {
         markInitialTestDone(student);
         setInitialDone(true);
-      } else if (mode === "5min" && lesson) {
-        setCompletedPretests((prev) => {
-          const next = new Set(prev);
-          next.add(lesson.id);
-          savePretests(next);
-          return next;
-        });
+        setProgress((prev) => ({ ...prev, mistakes: [...prev.mistakes, ...mistakes] }));
+      } else if (op === "div") {
+        setProgress((prev) => ({ ...prev, divMistakes: [...prev.divMistakes, ...mistakes] }));
+      } else {
+        setProgress((prev) => ({ ...prev, mistakes: [...prev.mistakes, ...mistakes] }));
       }
     } else {
-      setProgress((prev) => ({
-        mistakes: prev.mistakes.filter((p) =>
-          mistakes.some((m) => m.a === p.a && m.b === p.b)
-        ),
-      }));
+      // review: retain only still-wrong pairs
+      if (op === "div") {
+        setProgress((prev) => ({
+          ...prev,
+          divMistakes: prev.divMistakes.filter((p) =>
+            mistakes.some((m) => m.a === p.a && m.b === p.b)
+          ),
+        }));
+      } else {
+        setProgress((prev) => ({
+          ...prev,
+          mistakes: prev.mistakes.filter((p) =>
+            mistakes.some((m) => m.a === p.a && m.b === p.b)
+          ),
+        }));
+      }
     }
 
     logSession({
       student_name: student,
       session_type: curPhase === "review" ? "review" : mode,
-      lesson: lesson?.label ?? (mode === "initial" ? "Initial Test" : "Review"),
+      lesson: mode === "initial" ? "Initial Test" : curPhase === "review" ? `${op === "div" ? "Division" : "Multiplication"} Review` : op === "div" ? "Division" : "Multiplication",
       correct,
       total,
     });
 
     setSessionResult({
       mode: curPhase === "review" ? "review" : mode,
-      lessonLabel: lesson?.label,
       correct,
       total,
       newMistakeCount: mistakes.length,
@@ -163,21 +157,25 @@ export default function App() {
 
   // ── Start session ──────────────────────────────────────────────────────────
 
-  const startSession = async (lesson: Lesson | null, mode: SessionMode) => {
+  const startSession = async (op: "mult" | "div", mode: SessionMode) => {
     isFinishingRef.current = false;
     setPhase("loading");
 
     let q: Pair[];
     if (mode === "initial") {
       q = buildInitialQueue();
-    } else if (mode === "5min") {
-      q = buildFiveMinQueue(lesson!);
+    } else if (op === "div") {
+      q = buildDivisionQueue();
+    } else if (mode === "3min") {
+      // weighted learn (legacy path — unused in simplified lobby but kept for initial)
+      const stats = await fetchFactStats(studentName ?? "", "Practice") as FactStat[];
+      const fakLesson = { id: "all", label: "Practice", multipliers: Array.from({length:12},(_,i)=>i+1), tag: "1–12" };
+      q = buildThreeMinQueue(fakLesson, stats);
     } else {
-      const stats = await fetchFactStats(studentName ?? "", lesson!.label) as FactStat[];
-      q = buildThreeMinQueue(lesson!, stats);
+      q = buildInitialQueue(); // "practice" mode: all 78 unique pairs
     }
 
-    setActiveLesson(lesson);
+    activeOpRef.current = op;
     setActiveMode(mode);
     setQueue(q);
     setSessionMistakes([]);
@@ -186,7 +184,7 @@ export default function App() {
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
-    const timed = mode !== "3min";
+    const timed = mode === "initial" || mode === "5min";
     setSecondsLeft(timed ? DURATIONS[mode] : null);
     setPhase("practice");
 
@@ -208,14 +206,14 @@ export default function App() {
 
   // ── Start review ───────────────────────────────────────────────────────────
 
-  const startReview = () => {
-    if (progress.mistakes.length === 0) return;
+  const startReview = (op: "mult" | "div") => {
+    const pool = op === "div" ? progress.divMistakes : progress.mistakes;
+    if (pool.length === 0) return;
     isFinishingRef.current = false;
-    // Mistakes are stored normalized (smaller×larger).
-    // Expand to both directions so students see e.g. both 3×7 and 7×3.
-    const expanded = progress.mistakes.flatMap((p) =>
-      p.a === p.b ? [p] : [p, { a: p.b, b: p.a }]
+    const expanded = pool.flatMap((p) =>
+      p.a === p.b ? [p] : [p, { ...p, a: p.b, b: p.a }]
     );
+    activeOpRef.current = op;
     setQueue(shuffle(expanded));
     setSessionMistakes([]);
     setSessionCorrect(0);
@@ -245,7 +243,8 @@ export default function App() {
   const pracSubmit = () => {
     const answer   = parseInt(pracInput.trim(), 10);
     const pair     = queue[0];
-    const expected = pair.a * pair.b;
+    // Division pair: (a*b) ÷ b = a, so the expected answer is pair.a
+    const expected = pair.op === "div" ? pair.a : pair.a * pair.b;
     const correct  = answer === expected;
 
     if (!correct) setSessionMistakes((m) => [...m, pair]);
@@ -254,7 +253,8 @@ export default function App() {
 
     const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
     const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
-    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: answer, correct, time_seconds: correct ? elapsed : null });
+    const lessonLabel = activeModeRef.current === "initial" ? "Initial Test" : activeOpRef.current === "div" ? "Division" : "Multiplication";
+    logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: answer, correct, time_seconds: correct ? elapsed : null });
     updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
     setPracFeedback({ correct, answer: expected });
     setPracPhase("feedback");
@@ -266,9 +266,10 @@ export default function App() {
     setSessionTotal((t) => t + 1);
 
     const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
-    logFact({ student_name: studentName ?? "", lesson: activeLessonRef.current?.label ?? (activeModeRef.current === "initial" ? "Initial Test" : "Review"), session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: null });
+    const lessonLabel = activeModeRef.current === "initial" ? "Initial Test" : activeOpRef.current === "div" ? "Division" : "Multiplication";
+    logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: null });
     updateFactProgress(studentName ?? "", pair.a, pair.b, false);
-    setPracFeedback({ correct: false, answer: pair.a * pair.b });
+    setPracFeedback({ correct: false, answer: pair.op === "div" ? pair.a : pair.a * pair.b });
     setPracPhase("feedback");
   };
 
@@ -310,8 +311,13 @@ export default function App() {
 
   const handleBack = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (phase === "practice" && sessionMistakes.length > 0)
-      setProgress((prev) => ({ mistakes: [...prev.mistakes, ...sessionMistakes] }));
+    if (phase === "practice" && sessionMistakes.length > 0) {
+      if (activeOpRef.current === "div") {
+        setProgress((prev) => ({ ...prev, divMistakes: [...prev.divMistakes, ...sessionMistakes] }));
+      } else {
+        setProgress((prev) => ({ ...prev, mistakes: [...prev.mistakes, ...sessionMistakes] }));
+      }
+    }
     setSecondsLeft(null);
     isFinishingRef.current = false;
     setPhase(initialDone ? "lobby" : "initial-welcome");
@@ -327,11 +333,9 @@ export default function App() {
       fetchMistakes(name),
     ]);
     setInitialDone(done);
-    setProgress({ mistakes });
+    setProgress({ mistakes, divMistakes: [] });
     setPhase(done ? "lobby" : "initial-welcome");
   };
-
-  const hasMistakes = progress.mistakes.length > 0;
 
   // ─── Auth gate ─────────────────────────────────────────────────────────────
 
@@ -345,7 +349,7 @@ export default function App() {
     setStudentName(null);
     setInitialDone(false);
     setPhase("lobby");
-    setProgress({ mistakes: [] });
+    setProgress({ mistakes: [], divMistakes: [] });
   };
 
   return (
@@ -358,17 +362,19 @@ export default function App() {
       {phase === "initial-welcome" && (
         <InitialWelcomeView
           name={studentName}
-          onStart={() => startSession(null, "initial")}
+          onStart={() => startSession("mult", "initial")}
+          onSkip={() => setPhase("lobby")}
         />
       )}
 
       {phase === "lobby" && (
         <LobbyView
-          hasMistakes={hasMistakes}
-          mistakeCount={progress.mistakes.length}
-          completedPretests={completedPretests}
-          onSelectLesson={(lesson, mode) => startSession(lesson, mode)}
+          multMistakeCount={progress.mistakes.length}
+          divMistakeCount={progress.divMistakes.length}
+          initialDone={initialDone}
+          onPractice={(op) => startSession(op, "practice")}
           onReview={startReview}
+          onInitialTest={() => setPhase("initial-welcome")}
         />
       )}
 
@@ -378,9 +384,12 @@ export default function App() {
 
       {(phase === "practice" || phase === "review") && queue.length > 0 && (
         <PracticeView
-          label={phase === "review" ? "Review" : activeMode === "initial" ? "Initial Test" : (activeLesson?.label ?? "")}
-          tag={phase === "review" ? `${queue.length} remaining` : activeMode === "initial" ? `${queue.length} remaining` : (activeLesson?.tag ?? "")}
-          mode={phase === "review" ? "3min" : activeMode}
+          label={phase === "review"
+            ? (activeOpRef.current === "div" ? "Division Review" : "Multiplication Review")
+            : activeMode === "initial"
+              ? "Initial Test"
+              : activeOpRef.current === "div" ? "Division" : "Multiplication"}
+          tag={`${queue.length} remaining`}
           secondsLeft={secondsLeft}
           pair={queue[0]}
           input={pracInput}
@@ -443,7 +452,7 @@ function NameGate({ onSignIn }: { onSignIn: (name: string) => void }) {
 
 // ─── Initial welcome ──────────────────────────────────────────────────────────
 
-function InitialWelcomeView({ name, onStart }: { name: string; onStart: () => void }) {
+function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: () => void; onSkip: () => void }) {
   return (
     <div className="card gate-card">
       <p className="gate-heading">Welcome, {name}!</p>
@@ -454,6 +463,7 @@ function InitialWelcomeView({ name, onStart }: { name: string; onStart: () => vo
       </p>
       <div className="actions">
         <button className="btn-primary" onClick={onStart}>Start</button>
+        <button className="btn-ghost" onClick={onSkip}>Skip for now</button>
       </div>
     </div>
   );
@@ -461,47 +471,51 @@ function InitialWelcomeView({ name, onStart }: { name: string; onStart: () => vo
 
 // ─── Lobby ────────────────────────────────────────────────────────────────────
 
-function LobbyView({ hasMistakes, mistakeCount, completedPretests, onSelectLesson, onReview }: {
-  hasMistakes: boolean;
-  mistakeCount: number;
-  completedPretests: Set<string>;
-  onSelectLesson: (lesson: Lesson, mode: SessionMode) => void;
-  onReview: () => void;
+function LobbyView({ multMistakeCount, divMistakeCount, initialDone, onPractice, onReview, onInitialTest }: {
+  multMistakeCount: number;
+  divMistakeCount: number;
+  initialDone: boolean;
+  onPractice: (op: "mult" | "div") => void;
+  onReview: (op: "mult" | "div") => void;
+  onInitialTest: () => void;
 }) {
   return (
     <div className="lobby">
-      <p className="lobby-heading">Choose a lesson</p>
-      <div className="lesson-grid">
-        {LESSONS.map((lesson) => {
-          const pretestDone = completedPretests.has(lesson.id);
-          return (
-            <div key={lesson.id} className="lesson-card">
-              <div className="lesson-info">
-                <span className="lesson-label">{lesson.label}</span>
-                <span className="lesson-tag">{lesson.tag}</span>
-              </div>
-              <div className="lesson-btns">
-                {!pretestDone ? (
-                  <>
-                    <button className="btn-lesson-mode btn-pretest" onClick={() => onSelectLesson(lesson, "5min")}>Pre-test</button>
-                    <button className="btn-lesson-mode btn-learn"   onClick={() => onSelectLesson(lesson, "3min")}>Learn</button>
-                  </>
-                ) : (
-                  <>
-                    <button className="btn-lesson-mode btn-learn" onClick={() => onSelectLesson(lesson, "3min")}>Learn</button>
-                    <button className="btn-lesson-mode btn-quiz"  disabled title="Coming soon">Quiz</button>
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      {!initialDone && (
+        <button className="btn-initial-test" onClick={onInitialTest}>
+          Take the initial test
+        </button>
+      )}
+
+      <div className="op-section">
+        <p className="lobby-heading">Multiplication</p>
+        <div className="op-btns">
+          <button className="btn-op btn-practice" onClick={() => onPractice("mult")}>Practice</button>
+          <button
+            className={`btn-op btn-review-op ${multMistakeCount === 0 ? "disabled" : ""}`}
+            onClick={() => onReview("mult")}
+            disabled={multMistakeCount === 0}
+          >
+            Review
+            {multMistakeCount > 0 && <span className="review-count">{multMistakeCount}</span>}
+          </button>
+        </div>
       </div>
 
-      <button className={`btn-review ${hasMistakes ? "" : "disabled"}`} onClick={onReview} disabled={!hasMistakes}>
-        Review
-        {hasMistakes && <span className="review-count">{mistakeCount}</span>}
-      </button>
+      <div className="op-section">
+        <p className="lobby-heading">Division</p>
+        <div className="op-btns">
+          <button className="btn-op btn-practice" onClick={() => onPractice("div")}>Practice</button>
+          <button
+            className={`btn-op btn-review-op ${divMistakeCount === 0 ? "disabled" : ""}`}
+            onClick={() => onReview("div")}
+            disabled={divMistakeCount === 0}
+          >
+            Review
+            {divMistakeCount > 0 && <span className="review-count">{divMistakeCount}</span>}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -523,14 +537,22 @@ function AutoAdvance({ correct, onNext, children }: {
 
 // ─── Practice ─────────────────────────────────────────────────────────────────
 
-function PracticeView({ label, tag, mode, secondsLeft, pair, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef }: {
-  label: string; tag: string; mode: SessionMode; secondsLeft: number | null;
+function PracticeView({ label, tag, secondsLeft, pair, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef }: {
+  label: string; tag: string; secondsLeft: number | null;
   pair: Pair; input: string; onInput: (v: string) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   pracPhase: "question" | "feedback"; feedback: PracticeFeedback | null;
   onSubmit: () => void; onSkip: () => void; onNext: () => void; onBack: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
+  const isDiv = pair.op === "div";
+  const question = isDiv
+    ? <>{pair.a * pair.b} &divide; {pair.b} = ?</>
+    : <>{pair.a} &times; {pair.b} = ?</>;
+  const fullFact = isDiv
+    ? `${pair.a * pair.b} ÷ ${pair.b} = ${pair.a}`
+    : `${pair.a} × ${pair.b} = ${pair.a * pair.b}`;
+
   return (
     <div className="card">
       <div className="session-meta">
@@ -538,15 +560,13 @@ function PracticeView({ label, tag, mode, secondsLeft, pair, input, onInput, onK
         <span className="session-label">{label}</span>
         <span className="session-tag">{tag}</span>
         {secondsLeft !== null && (
-          <span className={`session-timer ${mode === "3min" ? "focused" : ""}`}>
-            {formatTime(secondsLeft)}
-          </span>
+          <span className="session-timer">{formatTime(secondsLeft)}</span>
         )}
       </div>
 
       {pracPhase === "question" ? (
         <>
-          <p className="problem">{pair.a} &times; {pair.b} = ?</p>
+          <p className="problem">{question}</p>
           <input ref={inputRef} className="answer-input" type="number" inputMode="numeric"
             value={input} onChange={(e) => onInput(e.target.value)} onKeyDown={onKeyDown}
             placeholder="your answer" />
@@ -558,9 +578,9 @@ function PracticeView({ label, tag, mode, secondsLeft, pair, input, onInput, onK
       ) : (
         feedback && (
           <AutoAdvance correct={feedback.correct} onNext={onNext}>
-            <p className="problem">{pair.a} &times; {pair.b} = {feedback.answer}</p>
+            <p className="problem">{isDiv ? <>{pair.a * pair.b} &divide; {pair.b} = {feedback.answer}</> : <>{pair.a} &times; {pair.b} = {feedback.answer}</>}</p>
             <p className={`result-label ${feedback.correct ? "correct" : "incorrect"}`}>
-              {feedback.correct ? "Correct." : `${pair.a} × ${pair.b} = ${feedback.answer}`}
+              {feedback.correct ? "Correct." : fullFact}
             </p>
             {!feedback.correct && (
               <div className="actions">
@@ -579,29 +599,18 @@ function PracticeView({ label, tag, mode, secondsLeft, pair, input, onInput, onK
 function SessionDoneView({ result, onContinue }: { result: SessionResult; onContinue: () => void }) {
   const isInitial = result.mode === "initial";
   const isReview  = result.mode === "review";
-  const isLearn   = result.mode === "3min";
 
   const headline = isInitial
     ? `Amazing work — you answered ${result.total} facts!`
     : isReview
       ? `Nice job — you reviewed ${result.total} fact${result.total !== 1 ? "s" : ""}!`
-      : isLearn
-        ? `Lesson complete!`
-        : `Well done — you got through ${result.total} fact${result.total !== 1 ? "s" : ""}!`;
+      : `Well done — you got through ${result.total} fact${result.total !== 1 ? "s" : ""}!`;
 
   const detail = isInitial
-    ? `You got ${result.correct} right. Your lessons are ready below.`
-    : isReview
-      ? result.newMistakeCount === 0
-        ? `You got every single one right. Keep it up!`
-        : `You got ${result.correct} right. ${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} still need a little work.`
-      : isLearn
-        ? result.newMistakeCount === 0
-          ? `You got every one right. Impressive!`
-          : `You got ${result.correct} / ${result.total} right. ${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} to keep working on.`
-        : result.newMistakeCount === 0
-          ? `You got ${result.correct} right — a perfect pre-test!`
-          : `You got ${result.correct} right. Use Learn to work on the rest.`;
+    ? `You got ${result.correct} right. Practice is ready below.`
+    : result.newMistakeCount === 0
+      ? `You got every single one right. Keep it up!`
+      : `You got ${result.correct} right. ${result.newMistakeCount} fact${result.newMistakeCount !== 1 ? "s" : ""} still need a little work.`;
 
   return (
     <div className="card done-card">
@@ -609,7 +618,7 @@ function SessionDoneView({ result, onContinue }: { result: SessionResult; onCont
       <p className="done-stat">{result.correct} / {result.total}</p>
       <p className="done-detail">{detail}</p>
       <button className="btn-primary" onClick={onContinue}>
-        {isInitial ? "Go to lessons" : "Back to lessons"}
+        {isInitial ? "Go to practice" : "Back"}
       </button>
     </div>
   );

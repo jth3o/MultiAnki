@@ -1,6 +1,7 @@
 export interface Pair {
   a: number;
   b: number;
+  op?: "div"; // undefined = multiplication; "div" = (a*b) ÷ b = a
 }
 
 export interface Lesson {
@@ -10,7 +11,7 @@ export interface Lesson {
   tag: string;
 }
 
-export type SessionMode = "initial" | "5min" | "3min";
+export type SessionMode = "initial" | "5min" | "3min" | "practice";
 
 export const LESSONS: Lesson[] = [
   { id: "lesson-1", label: "Lesson 1", multipliers: [1, 2, 3],    tag: "1, 2, 3"    },
@@ -20,9 +21,10 @@ export const LESSONS: Lesson[] = [
 ];
 
 export const DURATIONS: Record<SessionMode, number> = {
-  "initial": 600, // 10 minutes
-  "5min":    300, // 5 minutes
-  "3min":    180, // 3 minutes
+  "initial":  600, // 10 minutes
+  "5min":     300, // 5 minutes
+  "3min":     180, // 3 minutes
+  "practice":   0, // untimed
 };
 
 // ─── Initial test queue ───────────────────────────────────────────────────────
@@ -112,6 +114,17 @@ export function factsForLesson(lesson: Lesson): Pair[] {
     for (let b = 1; b <= 12; b++) pairs.push({ a, b });
   }
   return pairs;
+}
+
+// All 144 division facts: (a×b) ÷ b = a for a,b in 1–12.
+export function buildDivisionQueue(): Pair[] {
+  const pairs: Pair[] = [];
+  for (let a = 1; a <= 12; a++) {
+    for (let b = 1; b <= 12; b++) {
+      pairs.push({ a, b, op: "div" });
+    }
+  }
+  return shuffle(pairs);
 }
 
 export function shuffle<T>(arr: T[]): T[] {
