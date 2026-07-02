@@ -225,7 +225,7 @@ export function buildAdditionQueue(): Pair[] {
   const seen = new Set<string>();
   const pool: [number, number][] = [];
 
-  while (pool.length < 600) {
+  while (pool.length < 300) {
     // Mix of ranges: 3+3, 4+3, 4+4 digits
     const kind = pool.length % 3;
     let a: number, b: number;
@@ -243,7 +243,7 @@ export function buildAdditionQueue(): Pair[] {
     if (!seen.has(key)) { seen.add(key); pool.push([lo, hi]); }
   }
 
-  return shuffle(pool).slice(0, 300).map(([a, b]) => ({ a, b, op: "add" as const }));
+  return shuffle(pool.map(([a, b]) => ({ a, b, op: "add" as const })));
 }
 
 export function shuffle<T>(arr: T[]): T[] {
