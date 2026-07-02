@@ -1,8 +1,40 @@
+// Geometry op codes:
+//   g-ra = rect area (a=base, b=height)
+//   g-rp = rect perimeter
+//   g-ta = triangle area (a=base even, b=height) → ½ab
+//   g-tp = triangle perimeter (a,b,c = three sides)
+//   g-ca-r = circle area, radius given (a=r)      → πr²
+//   g-ca-d = circle area, diameter given (a=d)    → π(d/2)²
+//   g-cc-r = circle circumference, radius (a=r)  → 2πr
+//   g-cc-d = circle circumference, diameter (a=d)→ πd
+export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g-cc-r" | "g-cc-d";
+
 export interface Pair {
   a: number;
   b: number;
-  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²=a*a; "sqrt" = √(a²)=a
-  op?: "div" | "sq" | "sqrt";
+  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; GeoOp = geometry
+  op?: "div" | "sq" | "sqrt" | GeoOp;
+  c?: number; // third side for triangle perimeter
+}
+
+export function isGeo(pair: Pair): boolean {
+  return typeof pair.op === "string" && pair.op.startsWith("g-");
+}
+
+export interface GeoAnswer { value: number; hasPi: boolean; }
+
+export function geoAnswer(pair: Pair): GeoAnswer {
+  switch (pair.op) {
+    case "g-ra":  return { value: pair.a * pair.b, hasPi: false };
+    case "g-rp":  return { value: 2 * (pair.a + pair.b), hasPi: false };
+    case "g-ta":  return { value: (pair.a * pair.b) / 2, hasPi: false };
+    case "g-tp":  return { value: pair.a + pair.b + (pair.c ?? 0), hasPi: false };
+    case "g-ca-r": return { value: pair.a * pair.a, hasPi: true };
+    case "g-ca-d": return { value: (pair.a / 2) * (pair.a / 2), hasPi: true };
+    case "g-cc-r": return { value: 2 * pair.a, hasPi: true };
+    case "g-cc-d": return { value: pair.a, hasPi: true };
+    default: return { value: 0, hasPi: false };
+  }
 }
 
 export interface Lesson {
@@ -115,6 +147,48 @@ export function factsForLesson(lesson: Lesson): Pair[] {
     for (let b = 1; b <= 12; b++) pairs.push({ a, b });
   }
   return pairs;
+}
+
+// ─── Geometry queue ───────────────────────────────────────────────────────────
+// Mixes rect area/perim, triangle area/perim, and circle area/circumference
+// (both radius and diameter variants for circles).
+
+export function buildGeoQueue(): Pair[] {
+  const pairs: Pair[] = [];
+
+  // Rectangle: base 2–10, height ≥ base (avoid duplicates)
+  for (let b = 2; b <= 10; b++) {
+    for (let h = b; h <= 10; h++) {
+      pairs.push({ a: b, b: h, op: "g-ra" });
+      pairs.push({ a: b, b: h, op: "g-rp" });
+    }
+  }
+
+  // Triangle area: base even 2–12 so ½bh is always an integer
+  for (let b = 2; b <= 12; b += 2) {
+    for (let h = 2; h <= 10; h++) {
+      pairs.push({ a: b, b: h, op: "g-ta" });
+    }
+  }
+
+  // Triangle perimeter: curated set of valid triangles
+  const triSides: [number, number, number][] = [
+    [3,4,5],[6,8,10],[9,12,15],[5,12,13],[8,15,17],
+    [3,3,3],[4,4,4],[5,5,5],[6,6,6],[7,7,7],[8,8,8],
+    [3,3,5],[4,4,6],[5,5,7],[5,5,8],[6,6,8],
+    [3,4,6],[4,5,7],[5,6,8],[6,7,9],
+  ];
+  for (const [a, b, c] of triSides) pairs.push({ a, b, op: "g-tp", c });
+
+  // Circles: radius and diameter, r = 1–12
+  for (let r = 1; r <= 12; r++) {
+    pairs.push({ a: r,     b: 0, op: "g-ca-r" });
+    pairs.push({ a: r,     b: 0, op: "g-cc-r" });
+    pairs.push({ a: r * 2, b: 0, op: "g-ca-d" });
+    pairs.push({ a: r * 2, b: 0, op: "g-cc-d" });
+  }
+
+  return shuffle(pairs);
 }
 
 // 24 squares-and-roots facts: n² and √(n²) for n in 1–12, shuffled together.

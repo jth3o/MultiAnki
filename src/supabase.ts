@@ -34,6 +34,20 @@ export async function fetchPairWeights(student_name: string, op: string): Promis
   return (data ?? []).map(r => ({ a: r.a, b: r.b, wrongCount: r.wrong_count, slowCount: r.slow_count }));
 }
 
+// Fetch all pair weights for a student in one query; returns a map keyed by op.
+export async function fetchAllPairWeights(student_name: string): Promise<Record<string, PairWeight[]>> {
+  const { data } = await supabase
+    .from("pair_weights")
+    .select("op, a, b, wrong_count, slow_count")
+    .eq("student_name", student_name);
+  const result: Record<string, PairWeight[]> = {};
+  for (const r of data ?? []) {
+    if (!result[r.op]) result[r.op] = [];
+    result[r.op].push({ a: r.a, b: r.b, wrongCount: r.wrong_count, slowCount: r.slow_count });
+  }
+  return result;
+}
+
 export async function upsertPairWeights(student_name: string, op: string, weights: PairWeight[]): Promise<void> {
   if (weights.length === 0) return;
   await supabase.from("pair_weights").upsert(

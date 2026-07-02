@@ -436,6 +436,42 @@ body {
   border-color: var(--accent);
 }
 
+.btn-pi {
+  padding: 0.625rem 1rem;
+  font-size: 1.25rem;
+  font-family: var(--font);
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+.btn-pi:hover { opacity: 0.85; }
+
+.geo-question {
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+.geo-question svg {
+  overflow: visible;
+}
+.geo-shape {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 0.25rem;
+}
+.geo-dims {
+  font-size: 1.4rem;
+  font-weight: 500;
+  color: var(--text);
+  margin: 0 0 0.5rem;
+}
+
 .result-label {
   font-size: 1rem;
   line-height: 1.5;

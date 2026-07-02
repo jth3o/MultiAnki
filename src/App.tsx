@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  DURATIONS, buildInitialQueue, buildDivisionQueue, buildSquaresAndRootsQueue, buildThreeMinQueue, shuffle,
-  type Pair, type SessionMode, type FactStat,
+  DURATIONS, buildInitialQueue, buildDivisionQueue, buildSquaresAndRootsQueue, buildGeoQueue,
+  buildThreeMinQueue, shuffle, isGeo, geoAnswer,
+  type Pair, type SessionMode, type FactStat, type GeoAnswer,
 } from "./curriculum";
-import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchPairWeights, upsertPairWeights, type PairWeight } from "./supabase";
+import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, type PairWeight } from "./supabase";
 import "./App.css";
 
 // ─── localStorage (name only) ─────────────────────────────────────────────────
@@ -16,9 +17,21 @@ function saveStudentName(n: string) { localStorage.setItem(NAME_KEY, n); }
 function clearStudentName() { localStorage.removeItem(NAME_KEY); }
 
 // Progress is stored in Supabase; this is just an in-memory type.
-interface Progress { mult: PairWeight[]; div: PairWeight[]; sq: PairWeight[]; sqrt: PairWeight[]; }
+interface Progress {
+  mult: PairWeight[]; div: PairWeight[];
+  sq: PairWeight[];   sqrt: PairWeight[];
+  geo: Record<string, PairWeight[]>; // keyed by GeoOp string
+}
 
-function emptyProgress(): Progress { return { mult: [], div: [], sq: [], sqrt: [] }; }
+function emptyProgress(): Progress { return { mult: [], div: [], sq: [], sqrt: [], geo: {} }; }
+
+function progressFromWeightMap(m: Record<string, PairWeight[]>): Progress {
+  return {
+    mult: m["mult"] ?? [], div:  m["div"]  ?? [],
+    sq:   m["sq"]   ?? [], sqrt: m["sqrt"] ?? [],
+    geo: Object.fromEntries(Object.entries(m).filter(([k]) => k.startsWith("g-"))),
+  };
+}
 
 // Merge session results into a weight array, returning updated weights.
 function mergeWeights(
@@ -82,7 +95,7 @@ function signedExpected(pair: Pair, signs: Signs): number {
 
 type AppPhase = "lobby" | "initial-welcome" | "loading" | "practice" | "review" | "session-done";
 
-interface PracticeFeedback { correct: boolean; answer: number; }
+interface PracticeFeedback { correct: boolean; answer: number; hasPi?: boolean; }
 
 interface SessionResult {
   mode: SessionMode | "review";
@@ -127,7 +140,7 @@ export default function App() {
   const sessionCorrectsRef  = useRef<Pair[]>([]);
   const sessionSlowsRef     = useRef<Pair[]>([]);
   const activeModeRef       = useRef<SessionMode>("practice");
-  const activeOpRef         = useRef<"mult" | "div" | "sq">("mult");
+  const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo">("mult");
   const sessionExpiredRef   = useRef(false);
   const sessionCorrectRef  = useRef(0);
   const sessionTotalRef    = useRef(0);
@@ -149,16 +162,13 @@ export default function App() {
     const name = loadStudentName();
     if (!name) return;
     (async () => {
-      const [done, multW, divW, sqW, sqrtW, durationStr] = await Promise.all([
+      const [done, allWeights, durationStr] = await Promise.all([
         fetchInitialTestDone(name),
-        fetchPairWeights(name, "mult"),
-        fetchPairWeights(name, "div"),
-        fetchPairWeights(name, "sq"),
-        fetchPairWeights(name, "sqrt"),
+        fetchAllPairWeights(name),
         fetchSetting("practice_duration_secs", "300"),
       ]);
       setInitialDone(done);
-      setProgress({ mult: multW, div: divW, sq: sqW, sqrt: sqrtW });
+      setProgress(progressFromWeightMap(allWeights));
       setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
       setPhase(done ? "lobby" : "initial-welcome");
       setAppReady(true);
@@ -204,6 +214,16 @@ export default function App() {
       setProgress((prev) => ({ ...prev, sq: newSq, sqrt: newSqrt }));
       upsertPairWeights(student, "sq",   newSq);
       upsertPairWeights(student, "sqrt", newSqrt);
+    } else if (op === "geo") {
+      // Group mistakes/corrects/slows by their specific geo op, update each separately
+      const geoOps = [...new Set([...mistakes, ...corrects, ...slows].map(p => p.op as string))];
+      const newGeo = { ...progressRef.current.geo };
+      for (const gOp of geoOps) {
+        const f = (ps: Pair[]) => ps.filter(p => p.op === gOp);
+        newGeo[gOp] = mergeWeights(newGeo[gOp] ?? [], f(mistakes), f(corrects), f(slows), gOp);
+        upsertPairWeights(student, gOp, newGeo[gOp]);
+      }
+      setProgress((prev) => ({ ...prev, geo: newGeo }));
     } else {
       const current = op === "div" ? progressRef.current.div : progressRef.current.mult;
       const newWeights = mergeWeights(current, mistakes, corrects, slows, op);
@@ -212,7 +232,7 @@ export default function App() {
     }
 
     const curPhase = phaseRef.current;
-    const opLabel = op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
+    const opLabel = op === "geo" ? "Geometry" : op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
     logSession({
       student_name: student,
       session_type: curPhase === "review" ? "review" : mode,
@@ -303,7 +323,7 @@ export default function App() {
 
   // ── Start review ───────────────────────────────────────────────────────────
 
-  const startReview = (op: "mult" | "div" | "sq") => {
+  const startReview = (op: "mult" | "div" | "sq" | "geo") => {
     isFinishingRef.current = false;
     sessionExpiredRef.current = false;
 
@@ -327,6 +347,22 @@ export default function App() {
         for (let i = 0; i < reps; i++) weighted.push(p);
       }
       q = shuffle(weighted).sort((a, b) => scoreFor(b) - scoreFor(a));
+    } else if (op === "geo") {
+      const geoScoreFor = (p: Pair) => {
+        const opKey = p.op as string;
+        const wList = progress.geo[opKey] ?? [];
+        const pairKey = `${p.a}x${p.b}${p.c != null ? `x${p.c}` : ""}`;
+        const w = wList.find(w => `${w.a}x${w.b}` === `${p.a}x${p.b}`);
+        void pairKey;
+        return (w?.wrongCount ?? 0) * 2 + Math.floor((w?.slowCount ?? 0) / 2);
+      };
+      const allFacts = buildGeoQueue();
+      const weighted: Pair[] = [];
+      for (const p of allFacts) {
+        const reps = Math.min(6, 1 + geoScoreFor(p));
+        for (let i = 0; i < reps; i++) weighted.push(p);
+      }
+      q = shuffle(weighted).sort((a, b) => geoScoreFor(b) - geoScoreFor(a));
     } else {
       const weights = op === "div" ? progress.div : progress.mult;
       const wKey = (a: number, b: number) =>
@@ -346,7 +382,7 @@ export default function App() {
         const reps = Math.min(6, 1 + score(p.a, p.b));
         for (let i = 0; i < reps; i++) {
           weighted.push(p);
-          if (p.a !== p.b) weighted.push({ a: p.b, b: p.a });
+          if (op !== "div" && p.a !== p.b) weighted.push({ a: p.b, b: p.a });
         }
       }
       q = shuffle(weighted).sort((a, b) => score(b.a, b.b) - score(a.a, a.b));
@@ -363,7 +399,7 @@ export default function App() {
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
-    setSecondsLeft(practiceDurationSecs);
+    setSecondsLeft(op === "geo" ? 900 : practiceDurationSecs);
     setPhase("review");
 
     // Soft timer: marks expired, ends at next question boundary
@@ -384,12 +420,29 @@ export default function App() {
   // ── Submit / skip ──────────────────────────────────────────────────────────
 
   const pracSubmit = () => {
-    const answer   = parseInt(pracInput.trim(), 10);
-    const pair     = queue[0];
-    const expected = signedExpected(pair, questionSigns);
-    const correct  = answer === expected;
-
+    const pair    = queue[0];
     const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
+
+    let correct: boolean;
+    let expectedNum: number;
+    let hasPi = false;
+
+    if (isGeo(pair)) {
+      const exp = geoAnswer(pair);
+      expectedNum = exp.value;
+      hasPi = exp.hasPi;
+      const raw = pracInput.trim();
+      if (exp.hasPi) {
+        const withoutPi = raw.replace(/π$/, "").trim();
+        const coeff = withoutPi === "" ? 1 : parseFloat(withoutPi);
+        correct = raw.includes("π") && coeff === exp.value;
+      } else {
+        correct = parseFloat(raw) === exp.value;
+      }
+    } else {
+      expectedNum = signedExpected(pair, questionSigns);
+      correct = parseInt(pracInput.trim(), 10) === expectedNum;
+    }
 
     if (correct) {
       setSessionCorrects((c) => [...c, pair]);
@@ -400,10 +453,13 @@ export default function App() {
     setSessionCorrect((c) => c + (correct ? 1 : 0));
     setSessionTotal((t) => t + 1);
     const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
-    const lessonLabel = activeModeRef.current === "initial" ? "Initial Test" : activeOpRef.current === "div" ? "Division" : "Multiplication";
-    logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: answer, correct, time_seconds: correct ? elapsed : null });
-    updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
-    setPracFeedback({ correct, answer: expected });
+    const opRef = activeOpRef.current;
+    const lessonLabel = activeModeRef.current === "initial" ? "Initial Test"
+      : opRef === "geo" ? "Geometry" : opRef === "div" ? "Division"
+      : opRef === "sq" ? "Squares & Roots" : "Multiplication";
+    logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: expectedNum, correct, time_seconds: correct ? elapsed : null });
+    if (!isGeo(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
+    setPracFeedback({ correct, answer: expectedNum, hasPi });
     setPracPhase("feedback");
   };
 
@@ -413,10 +469,14 @@ export default function App() {
     setSessionTotal((t) => t + 1);
 
     const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
-    const lessonLabel = activeModeRef.current === "initial" ? "Initial Test" : activeOpRef.current === "div" ? "Division" : "Multiplication";
-    logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: null });
-    updateFactProgress(studentName ?? "", pair.a, pair.b, false);
-    setPracFeedback({ correct: false, answer: signedExpected(pair, questionSigns) });
+    const opRef2 = activeOpRef.current;
+    const lessonLabel2 = activeModeRef.current === "initial" ? "Initial Test"
+      : opRef2 === "geo" ? "Geometry" : opRef2 === "div" ? "Division"
+      : opRef2 === "sq" ? "Squares & Roots" : "Multiplication";
+    logFact({ student_name: studentName ?? "", lesson: lessonLabel2, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: null });
+    if (!isGeo(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, false);
+    const skipExp = isGeo(pair) ? geoAnswer(pair) : { value: signedExpected(pair, questionSigns), hasPi: false };
+    setPracFeedback({ correct: false, answer: skipExp.value, hasPi: skipExp.hasPi });
     setPracPhase("feedback");
   };
 
@@ -467,6 +527,15 @@ export default function App() {
         setProgress((prev) => ({ ...prev, sq: newSq, sqrt: newSqrt }));
         upsertPairWeights(studentName ?? "", "sq",   newSq);
         upsertPairWeights(studentName ?? "", "sqrt", newSqrt);
+      } else if (op === "geo") {
+        const geoOps = [...new Set(sessionMistakes.map(p => p.op as string))];
+        const newGeo = { ...progressRef.current.geo };
+        for (const gOp of geoOps) {
+          const f = sessionMistakes.filter(p => p.op === gOp);
+          newGeo[gOp] = mergeWeights(newGeo[gOp] ?? [], f, [], [], gOp);
+          upsertPairWeights(studentName ?? "", gOp, newGeo[gOp]);
+        }
+        setProgress((prev) => ({ ...prev, geo: newGeo }));
       } else {
         const current = op === "div" ? progressRef.current.div : progressRef.current.mult;
         const newWeights = mergeWeights(current, sessionMistakes, [], [], op);
@@ -482,18 +551,15 @@ export default function App() {
   // ── Sign in ────────────────────────────────────────────────────────────────
 
   const handleSignIn = async (name: string) => {
-    const [done, multW, divW, sqW, sqrtW, durationStr] = await Promise.all([
+    const [done, allWeights, durationStr] = await Promise.all([
       fetchInitialTestDone(name),
-      fetchPairWeights(name, "mult"),
-      fetchPairWeights(name, "div"),
-      fetchPairWeights(name, "sq"),
-      fetchPairWeights(name, "sqrt"),
+      fetchAllPairWeights(name),
       fetchSetting("practice_duration_secs", "300"),
     ]);
     saveStudentName(name);
     setStudentName(name);
     setInitialDone(done);
-    setProgress({ mult: multW, div: divW, sq: sqW, sqrt: sqrtW });
+    setProgress(progressFromWeightMap(allWeights));
     setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
     setAppReady(true);
     setPhase(done ? "lobby" : "initial-welcome");
@@ -550,9 +616,9 @@ export default function App() {
 
       {(phase === "practice" || phase === "review") && queue.length > 0 && (
         <PracticeView
-          label={activeMode === "initial"
-            ? "Initial Test"
-            : activeOpRef.current === "sq" ? "Squares & Roots"
+          label={activeMode === "initial" ? "Initial Test"
+            : activeOpRef.current === "sq"  ? "Squares & Roots"
+            : activeOpRef.current === "geo" ? "Geometry"
             : activeOpRef.current === "div" ? "Division" : "Multiplication"}
           tag=""
           secondsLeft={secondsLeft}
@@ -668,6 +734,11 @@ function LobbyView({ initialDone, onReview, onInitialTest }: {
         <p className="lobby-heading">Squares &amp; Roots</p>
         <button className="btn-op btn-practice" onClick={() => onReview("sq")}>Practice</button>
       </div>
+
+      <div className="op-section">
+        <p className="lobby-heading">Geometry</p>
+        <button className="btn-op btn-practice" onClick={() => onReview("geo")}>Practice</button>
+      </div>
     </div>
   );
 }
@@ -689,6 +760,121 @@ function AutoAdvance({ correct, onNext, children }: {
 
 // ─── Practice ─────────────────────────────────────────────────────────────────
 
+function GeoFigure({ pair }: { pair: Pair }) {
+  // Extra padding in the viewBox so rotated/edge labels never clip
+  const W = 240, H = 190;
+  const stroke = "var(--accent)";
+  const textFill = "var(--text)";
+  const muted = "var(--muted)";
+  const sw = 2.5;
+  const fs = 14;
+
+  if (pair.op === "g-ra" || pair.op === "g-rp") {
+    const rx = 50, ry = 25, rw = 140, rh = 110;
+    const midX = rx + rw / 2;
+    const midY = ry + rh / 2;
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
+        <rect x={rx} y={ry} width={rw} height={rh} fill="none" stroke={stroke} strokeWidth={sw} rx={3} />
+        {/* base label below */}
+        <text x={midX} y={ry + rh + 22} textAnchor="middle" fontSize={fs} fill={textFill} fontWeight="600">b = {pair.a}</text>
+        {/* height label left, rotated */}
+        <text x={rx - 20} y={midY} textAnchor="middle" fontSize={fs} fill={textFill} fontWeight="600"
+          transform={`rotate(-90 ${rx - 20} ${midY})`}>h = {pair.b}</text>
+      </svg>
+    );
+  }
+
+  if (pair.op === "g-ta") {
+    const bx = 45, by = 150, bw = 150, th = 110;
+    const apex = { x: bx, y: by - th };
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
+        <polygon points={`${apex.x},${apex.y} ${bx},${by} ${bx + bw},${by}`} fill="none" stroke={stroke} strokeWidth={sw} />
+        {/* dashed height */}
+        <line x1={bx} y1={by} x2={apex.x} y2={apex.y} stroke={muted} strokeWidth={1.5} strokeDasharray="4 3" />
+        <text x={bx + bw / 2} y={by + 20} textAnchor="middle" fontSize={fs} fill={textFill} fontWeight="600">b = {pair.a}</text>
+        <text x={bx - 22} y={by - th / 2} textAnchor="middle" fontSize={fs} fill={textFill} fontWeight="600"
+          transform={`rotate(-90 ${bx - 22} ${by - th / 2})`}>h = {pair.b}</text>
+      </svg>
+    );
+  }
+
+  if (pair.op === "g-tp") {
+    const ax = 120, ay = 20;
+    const bx2 = 30, by2 = 155;
+    const cx2 = 210, cy2 = 155;
+    // Offset labels away from the line midpoints so they don't sit on the edge
+    const midAB = { x: (ax + bx2) / 2 - 18, y: (ay + by2) / 2 };
+    const midBC = { x: (bx2 + cx2) / 2, y: by2 + 18 };
+    const midAC = { x: (ax + cx2) / 2 + 18, y: (ay + cy2) / 2 };
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
+        <polygon points={`${ax},${ay} ${bx2},${by2} ${cx2},${cy2}`} fill="none" stroke={stroke} strokeWidth={sw} />
+        <text x={midAB.x} y={midAB.y} textAnchor="middle" fontSize={fs} fill={textFill} fontWeight="600">{pair.a}</text>
+        <text x={midBC.x} y={midBC.y} textAnchor="middle" fontSize={fs} fill={textFill} fontWeight="600">{pair.b}</text>
+        <text x={midAC.x} y={midAC.y} textAnchor="middle" fontSize={fs} fill={textFill} fontWeight="600">{pair.c ?? 0}</text>
+      </svg>
+    );
+  }
+
+  if (pair.op === "g-ca-r" || pair.op === "g-cc-r") {
+    const cx = W / 2, cy = H / 2, r = 72;
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={stroke} strokeWidth={sw} />
+        <line x1={cx} y1={cy} x2={cx + r} y2={cy} stroke={muted} strokeWidth={2} />
+        <circle cx={cx} cy={cy} r={3} fill={muted} />
+        <text x={cx + r / 2} y={cy - 10} textAnchor="middle" fontSize={fs} fill={textFill} fontWeight="600">r = {pair.a}</text>
+      </svg>
+    );
+  }
+
+  if (pair.op === "g-ca-d" || pair.op === "g-cc-d") {
+    const cx = W / 2, cy = H / 2, r = 72;
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={stroke} strokeWidth={sw} />
+        <line x1={cx - r} y1={cy} x2={cx + r} y2={cy} stroke={muted} strokeWidth={2} />
+        <circle cx={cx} cy={cy} r={3} fill={muted} />
+        <text x={cx} y={cy - 10} textAnchor="middle" fontSize={fs} fill={textFill} fontWeight="600">d = {pair.a}</text>
+      </svg>
+    );
+  }
+
+  return null;
+}
+
+function geoQuestionText(pair: Pair): { title: string; measure: string } {
+  switch (pair.op) {
+    case "g-ra":   return { title: "Rectangle", measure: "Area = ?" };
+    case "g-rp":   return { title: "Rectangle", measure: "Perimeter = ?" };
+    case "g-ta":   return { title: "Triangle",  measure: "Area = ?" };
+    case "g-tp":   return { title: "Triangle",  measure: "Perimeter = ?" };
+    case "g-ca-r": return { title: "Circle", measure: "Area = ?" };
+    case "g-ca-d": return { title: "Circle", measure: "Area = ?" };
+    case "g-cc-r": return { title: "Circle", measure: "Circumference = ?" };
+    case "g-cc-d": return { title: "Circle", measure: "Circumference = ?" };
+    default:       return { title: "", measure: "" };
+  }
+}
+
+function geoAnswerText(pair: Pair, ans: PracticeFeedback): string {
+  const v = ans.answer;
+  const pi = ans.hasPi ? "π" : "";
+  switch (pair.op) {
+    case "g-ra":   return `Area = ${pair.a} × ${pair.b} = ${v}`;
+    case "g-rp":   return `Perimeter = 2 × (${pair.a} + ${pair.b}) = ${v}`;
+    case "g-ta":   return `Area = ½ × ${pair.a} × ${pair.b} = ${v}`;
+    case "g-tp":   return `Perimeter = ${pair.a} + ${pair.b} + ${pair.c ?? 0} = ${v}`;
+    case "g-ca-r": return `Area = π × ${pair.a}² = ${v}${pi}`;
+    case "g-ca-d": return `Area = π × (${pair.a}/2)² = ${v}${pi}`;
+    case "g-cc-r": return `Circumference = 2π × ${pair.a} = ${v}${pi}`;
+    case "g-cc-d": return `Circumference = π × ${pair.a} = ${v}${pi}`;
+    default: return `${v}${pi}`;
+  }
+}
+
 function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef }: {
   label: string; tag: string; secondsLeft: number | null;
   pair: Pair; signs: Signs; input: string; onInput: (v: string) => void;
@@ -700,8 +886,10 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
   const isDiv  = pair.op === "div";
   const isSq   = pair.op === "sq";
   const isSqrt = pair.op === "sqrt";
+  const geo     = isGeo(pair);
+  const isCircle = pair.op === "g-ca-r" || pair.op === "g-ca-d" || pair.op === "g-cc-r" || pair.op === "g-cc-d";
 
-  // Signed display values (signs are always {false,false} for sq/sqrt)
+  // Signed display values (signs are always {false,false} for sq/sqrt/geo)
   const sA = signs.negA ? -pair.a : pair.a;
   const sB = signs.negB ? -pair.b : pair.b;
   const dividend = isDiv ? (signs.negA ? -(pair.a * pair.b) : pair.a * pair.b) : null;
@@ -725,6 +913,12 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
     ? `${dividend} ÷ ${divisor} = ${expected}`
     : `${sA} × ${sB} = ${expected}`;
 
+  const geoQ = geo ? geoQuestionText(pair) : null;
+
+  const appendPi = () => {
+    if (!input.includes("π")) onInput(input + "π");
+  };
+
   return (
     <div className="card">
       <div className="session-meta">
@@ -738,10 +932,25 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
 
       {pracPhase === "question" ? (
         <>
-          <p className="problem">{question}</p>
-          <input ref={inputRef} className="answer-input" type="number" inputMode="numeric"
-            value={input} onChange={(e) => onInput(e.target.value)} onKeyDown={onKeyDown}
-            placeholder="your answer" />
+          {geo && geoQ ? (
+            <div className="geo-question">
+              <p className="geo-shape">{geoQ.title}</p>
+              <GeoFigure pair={pair} />
+              <p className="problem">{geoQ.measure}</p>
+            </div>
+          ) : (
+            <p className="problem">{question}</p>
+          )}
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "center" }}>
+            <input ref={inputRef} className="answer-input"
+              type={geo ? "text" : "number"} inputMode={geo && isCircle ? "text" : "numeric"}
+              value={input} onChange={(e) => onInput(e.target.value)} onKeyDown={onKeyDown}
+              placeholder={isCircle ? "e.g. 25π" : "your answer"}
+              style={{ flex: 1 }} />
+            {isCircle && (
+              <button className="btn-pi" onClick={appendPi} type="button">π</button>
+            )}
+          </div>
           <div className="actions">
             <button className="btn-primary" onClick={onSubmit} disabled={!input.trim()}>Submit</button>
             <button className="btn-ghost" onClick={onSkip}>I don&apos;t know</button>
@@ -750,14 +959,18 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
       ) : (
         feedback && (
           <AutoAdvance correct={feedback.correct} onNext={onNext}>
-            <p className="problem">
-              {isSq   ? <>{pair.a}<sup>2</sup> = {feedback.answer}</>
-              : isSqrt ? <>&radic;{pair.a * pair.a} = {feedback.answer}</>
-              : isDiv  ? <>{dividend} &divide; {divisor} = {feedback.answer}</>
-              :          <>{sA} &times; {sB} = {feedback.answer}</>}
-            </p>
+            {geo ? (
+              <p className="problem">{geoAnswerText(pair, feedback)}</p>
+            ) : (
+              <p className="problem">
+                {isSq   ? <>{pair.a}<sup>2</sup> = {feedback.answer}</>
+                : isSqrt ? <>&radic;{pair.a * pair.a} = {feedback.answer}</>
+                : isDiv  ? <>{dividend} &divide; {divisor} = {feedback.answer}</>
+                :          <>{sA} &times; {sB} = {feedback.answer}</>}
+              </p>
+            )}
             <p className={`result-label ${feedback.correct ? "correct" : "incorrect"}`}>
-              {feedback.correct ? "Correct." : fullFact}
+              {feedback.correct ? "Correct." : geo ? geoAnswerText(pair, feedback) : fullFact}
             </p>
             {!feedback.correct && (
               <div className="actions">
