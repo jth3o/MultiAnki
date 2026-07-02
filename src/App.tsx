@@ -935,15 +935,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
     ? <>{pair.a} + {pair.b} = ?</>
     : <>{sA} &times; {sB} = ?</>;
 
-  const fullFact = isSq
-    ? `${pair.a}² = ${expected}`
-    : isSqrt
-    ? `√${pair.a * pair.a} = ${expected}`
-    : isDiv
-    ? `${dividend} ÷ ${divisor} = ${expected}`
-    : isAdd
-    ? `${pair.a} + ${pair.b} = ${expected}`
-    : `${sA} × ${sB} = ${expected}`;
+
 
   const geoQ = geo ? geoQuestionText(pair) : null;
 
