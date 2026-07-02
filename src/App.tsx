@@ -62,6 +62,23 @@ function formatTime(s: number): string {
   return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
+interface Signs { negA: boolean; negB: boolean; }
+
+function randomSigns(): Signs {
+  const r = Math.random();
+  if (r < 1 / 3) return { negA: false, negB: false };
+  if (r < 2 / 3) return Math.random() < 0.5 ? { negA: true, negB: false } : { negA: false, negB: true };
+  return { negA: true, negB: true };
+}
+
+function signedExpected(pair: Pair, signs: Signs): number {
+  if (pair.op === "div") {
+    // (a*b) ÷ b = a; negating dividend (negA) or divisor (negB) flips answer sign
+    return (signs.negA !== signs.negB) ? -pair.a : pair.a;
+  }
+  return (signs.negA ? -pair.a : pair.a) * (signs.negB ? -pair.b : pair.b);
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type AppPhase = "lobby" | "initial-welcome" | "loading" | "practice" | "review" | "session-done";
@@ -98,6 +115,7 @@ export default function App() {
   const [sessionTotal, setSessionTotal]       = useState(0);
   const [secondsLeft, setSecondsLeft]         = useState<number | null>(null);
   const [sessionResult, setSessionResult]     = useState<SessionResult | null>(null);
+  const [questionSigns, setQuestionSigns]     = useState<Signs>({ negA: false, negB: false });
 
   const inputRef        = useRef<HTMLInputElement>(null);
   const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -232,6 +250,7 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
+    setQuestionSigns(randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
@@ -310,6 +329,7 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
+    setQuestionSigns(randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
@@ -336,8 +356,7 @@ export default function App() {
   const pracSubmit = () => {
     const answer   = parseInt(pracInput.trim(), 10);
     const pair     = queue[0];
-    // Division pair: (a*b) ÷ b = a, so the expected answer is pair.a
-    const expected = pair.op === "div" ? pair.a : pair.a * pair.b;
+    const expected = signedExpected(pair, questionSigns);
     const correct  = answer === expected;
 
     const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
@@ -367,7 +386,7 @@ export default function App() {
     const lessonLabel = activeModeRef.current === "initial" ? "Initial Test" : activeOpRef.current === "div" ? "Division" : "Multiplication";
     logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: null });
     updateFactProgress(studentName ?? "", pair.a, pair.b, false);
-    setPracFeedback({ correct: false, answer: pair.op === "div" ? pair.a : pair.a * pair.b });
+    setPracFeedback({ correct: false, answer: signedExpected(pair, questionSigns) });
     setPracPhase("feedback");
   };
 
@@ -390,6 +409,7 @@ export default function App() {
       endSession();
     } else {
       setQueue(newQueue);
+      setQuestionSigns(randomSigns());
       setPracPhase("question");
       setPracInput("");
       setPracFeedback(null);
@@ -499,6 +519,7 @@ export default function App() {
           onKeyDown={pracKeyDown}
           pracPhase={pracPhase}
           feedback={pracFeedback}
+          signs={questionSigns}
           onSubmit={pracSubmit}
           onSkip={pracSkip}
           onNext={pracNext}
@@ -624,21 +645,30 @@ function AutoAdvance({ correct, onNext, children }: {
 
 // ─── Practice ─────────────────────────────────────────────────────────────────
 
-function PracticeView({ label, tag, secondsLeft, pair, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef }: {
+function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef }: {
   label: string; tag: string; secondsLeft: number | null;
-  pair: Pair; input: string; onInput: (v: string) => void;
+  pair: Pair; signs: Signs; input: string; onInput: (v: string) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   pracPhase: "question" | "feedback"; feedback: PracticeFeedback | null;
   onSubmit: () => void; onSkip: () => void; onNext: () => void; onBack: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
   const isDiv = pair.op === "div";
+
+  // Signed display values
+  const sA = signs.negA ? -pair.a : pair.a;
+  const sB = signs.negB ? -pair.b : pair.b;
+  const dividend = isDiv ? (signs.negA ? -(pair.a * pair.b) : pair.a * pair.b) : null;
+  const divisor  = isDiv ? sB : null;
+
   const question = isDiv
-    ? <>{pair.a * pair.b} &divide; {pair.b} = ?</>
-    : <>{pair.a} &times; {pair.b} = ?</>;
+    ? <>{dividend} &divide; {divisor} = ?</>
+    : <>{sA} &times; {sB} = ?</>;
+
+  const expected = signedExpected(pair, signs);
   const fullFact = isDiv
-    ? `${pair.a * pair.b} ÷ ${pair.b} = ${pair.a}`
-    : `${pair.a} × ${pair.b} = ${pair.a * pair.b}`;
+    ? `${dividend} ÷ ${divisor} = ${expected}`
+    : `${sA} × ${sB} = ${expected}`;
 
   return (
     <div className="card">
@@ -665,7 +695,7 @@ function PracticeView({ label, tag, secondsLeft, pair, input, onInput, onKeyDown
       ) : (
         feedback && (
           <AutoAdvance correct={feedback.correct} onNext={onNext}>
-            <p className="problem">{isDiv ? <>{pair.a * pair.b} &divide; {pair.b} = {feedback.answer}</> : <>{pair.a} &times; {pair.b} = {feedback.answer}</>}</p>
+            <p className="problem">{isDiv ? <>{dividend} &divide; {divisor} = {feedback.answer}</> : <>{sA} &times; {sB} = {feedback.answer}</>}</p>
             <p className={`result-label ${feedback.correct ? "correct" : "incorrect"}`}>
               {feedback.correct ? "Correct." : fullFact}
             </p>
