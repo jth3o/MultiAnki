@@ -212,39 +212,36 @@ export function buildDivisionQueue(): Pair[] {
   return shuffle(pairs);
 }
 
-// 300 four-digit addition facts (sums in 1000–9999).
+// 300 four-digit addition facts (sums in 1000–9999), using random addends.
+// The pool is seeded deterministically so the same 300 facts are always available.
 export function buildAdditionQueue(): Pair[] {
-  const pool: [number, number][] = [];
-  const seen = new Set<string>();
-
-  const tryAdd = (a: number, b: number) => {
-    const lo = Math.min(a, b), hi = Math.max(a, b);
-    const sum = lo + hi;
-    if (sum < 1000 || sum > 9999) return;
-    const key = `${lo}+${hi}`;
-    if (!seen.has(key)) { seen.add(key); pool.push([lo, hi]); }
+  // Simple seeded LCG so the pool is stable across calls
+  let seed = 20250702;
+  const rand = (min: number, max: number) => {
+    seed = (seed * 1664525 + 1013904223) & 0x7fffffff;
+    return min + (seed % (max - min + 1));
   };
 
-  // 3-digit addends (100–999, varied steps)
-  const d3 = [100,125,150,175,200,225,250,275,300,325,350,375,400,425,450,475,
-              500,525,550,575,600,625,650,675,700,725,750,775,800,825,850,875,900,925,950,975,999];
-  // 4-digit addends (1000–4999)
-  const d4 = [1000,1250,1500,1750,2000,2250,2500,2750,3000,3250,3500,3750,4000,4250,4500,4750,4999];
+  const seen = new Set<string>();
+  const pool: [number, number][] = [];
 
-  // 3-digit + 3-digit with 4-digit sum
-  for (let i = 0; i < d3.length; i++)
-    for (let j = i; j < d3.length; j++)
-      tryAdd(d3[i], d3[j]);
-
-  // 4-digit + 3-digit
-  for (const a of d4)
-    for (const b of d3)
-      tryAdd(a, b);
-
-  // 4-digit + 4-digit
-  for (let i = 0; i < d4.length; i++)
-    for (let j = i; j < d4.length; j++)
-      tryAdd(d4[i], d4[j]);
+  while (pool.length < 600) {
+    // Mix of ranges: 3+3, 4+3, 4+4 digits
+    const kind = pool.length % 3;
+    let a: number, b: number;
+    if (kind === 0) {
+      a = rand(100, 999); b = rand(100, 999);
+    } else if (kind === 1) {
+      a = rand(1000, 4999); b = rand(100, 999);
+    } else {
+      a = rand(1000, 4000); b = rand(1000, 4000);
+    }
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    const sum = lo + hi;
+    if (sum < 1000 || sum > 9999) continue;
+    const key = `${lo}+${hi}`;
+    if (!seen.has(key)) { seen.add(key); pool.push([lo, hi]); }
+  }
 
   return shuffle(pool).slice(0, 300).map(([a, b]) => ({ a, b, op: "add" as const }));
 }
