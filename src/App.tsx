@@ -923,8 +923,6 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
   const dividend = isDiv ? (signs.negA ? -(pair.a * pair.b) : pair.a * pair.b) : null;
   const divisor  = isDiv ? sB : null;
 
-  const expected = signedExpected(pair, signs);
-
   const question = isSq
     ? <>{pair.a}<sup>2</sup> = ?</>
     : isSqrt
