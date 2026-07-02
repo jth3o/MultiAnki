@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   DURATIONS, buildInitialQueue, buildDivisionQueue, buildSquaresAndRootsQueue, buildGeoQueue,
-  buildThreeMinQueue, shuffle, isGeo, geoAnswer,
+  buildAdditionQueue, buildThreeMinQueue, shuffle, isGeo, geoAnswer,
   type Pair, type SessionMode, type FactStat,
 } from "./curriculum";
 import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, type PairWeight } from "./supabase";
@@ -20,15 +20,17 @@ function clearStudentName() { localStorage.removeItem(NAME_KEY); }
 interface Progress {
   mult: PairWeight[]; div: PairWeight[];
   sq: PairWeight[];   sqrt: PairWeight[];
+  add: PairWeight[];
   geo: Record<string, PairWeight[]>; // keyed by GeoOp string
 }
 
-function emptyProgress(): Progress { return { mult: [], div: [], sq: [], sqrt: [], geo: {} }; }
+function emptyProgress(): Progress { return { mult: [], div: [], sq: [], sqrt: [], add: [], geo: {} }; }
 
 function progressFromWeightMap(m: Record<string, PairWeight[]>): Progress {
   return {
     mult: m["mult"] ?? [], div:  m["div"]  ?? [],
     sq:   m["sq"]   ?? [], sqrt: m["sqrt"] ?? [],
+    add:  m["add"]  ?? [],
     geo: Object.fromEntries(Object.entries(m).filter(([k]) => k.startsWith("g-"))),
   };
 }
@@ -87,6 +89,7 @@ function randomSigns(): Signs {
 function signedExpected(pair: Pair, signs: Signs): number {
   if (pair.op === "sq")   return pair.a * pair.a;
   if (pair.op === "sqrt") return pair.a;
+  if (pair.op === "add")  return pair.a + pair.b;
   if (pair.op === "div")  return (signs.negA !== signs.negB) ? -pair.a : pair.a;
   return (signs.negA ? -pair.a : pair.a) * (signs.negB ? -pair.b : pair.b);
 }
@@ -140,7 +143,7 @@ export default function App() {
   const sessionCorrectsRef  = useRef<Pair[]>([]);
   const sessionSlowsRef     = useRef<Pair[]>([]);
   const activeModeRef       = useRef<SessionMode>("practice");
-  const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo">("mult");
+  const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo" | "add">("mult");
   const sessionExpiredRef   = useRef(false);
   const sessionCorrectRef  = useRef(0);
   const sessionTotalRef    = useRef(0);
@@ -224,6 +227,10 @@ export default function App() {
         upsertPairWeights(student, gOp, newGeo[gOp]);
       }
       setProgress((prev) => ({ ...prev, geo: newGeo }));
+    } else if (op === "add") {
+      const newWeights = mergeWeights(progressRef.current.add, mistakes, corrects, slows, "add");
+      setProgress((prev) => ({ ...prev, add: newWeights }));
+      upsertPairWeights(student, "add", newWeights);
     } else {
       const current = op === "div" ? progressRef.current.div : progressRef.current.mult;
       const newWeights = mergeWeights(current, mistakes, corrects, slows, op);
@@ -232,7 +239,7 @@ export default function App() {
     }
 
     const curPhase = phaseRef.current;
-    const opLabel = op === "geo" ? "Geometry" : op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
+    const opLabel = op === "geo" ? "Geometry" : op === "add" ? "Addition" : op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
     logSession({
       student_name: student,
       session_type: curPhase === "review" ? "review" : mode,
@@ -279,7 +286,7 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
-    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" ? { negA: false, negB: false } : randomSigns());
+    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
@@ -323,7 +330,7 @@ export default function App() {
 
   // ── Start review ───────────────────────────────────────────────────────────
 
-  const startReview = (op: "mult" | "div" | "sq" | "geo") => {
+  const startReview = (op: "mult" | "div" | "sq" | "geo" | "add") => {
     isFinishingRef.current = false;
     sessionExpiredRef.current = false;
 
@@ -363,6 +370,20 @@ export default function App() {
         for (let i = 0; i < reps; i++) weighted.push(p);
       }
       q = shuffle(weighted).sort((a, b) => geoScoreFor(b) - geoScoreFor(a));
+    } else if (op === "add") {
+      const wMap = new Map<string, PairWeight>();
+      for (const w of progress.add) wMap.set(`${Math.min(w.a,w.b)}x${Math.max(w.a,w.b)}`, w);
+      const score = (a: number, b: number) => {
+        const w = wMap.get(`${Math.min(a,b)}x${Math.max(a,b)}`);
+        return (w?.wrongCount ?? 0) * 2 + Math.floor((w?.slowCount ?? 0) / 2);
+      };
+      const allFacts = buildAdditionQueue();
+      const weighted: Pair[] = [];
+      for (const p of allFacts) {
+        const reps = Math.min(6, 1 + score(p.a, p.b));
+        for (let i = 0; i < reps; i++) weighted.push(p);
+      }
+      q = shuffle(weighted).sort((a, b) => score(b.a, b.b) - score(a.a, a.b));
     } else {
       const weights = op === "div" ? progress.div : progress.mult;
       const wKey = (a: number, b: number) =>
@@ -395,7 +416,7 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
-    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" ? { negA: false, negB: false } : randomSigns());
+    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
@@ -455,8 +476,8 @@ export default function App() {
     const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
     const opRef = activeOpRef.current;
     const lessonLabel = activeModeRef.current === "initial" ? "Initial Test"
-      : opRef === "geo" ? "Geometry" : opRef === "div" ? "Division"
-      : opRef === "sq" ? "Squares & Roots" : "Multiplication";
+      : opRef === "geo" ? "Geometry" : opRef === "add" ? "Addition"
+      : opRef === "div" ? "Division" : opRef === "sq" ? "Squares & Roots" : "Multiplication";
     logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: expectedNum, correct, time_seconds: correct ? elapsed : null });
     if (!isGeo(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
     setPracFeedback({ correct, answer: expectedNum, hasPi });
@@ -471,8 +492,8 @@ export default function App() {
     const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
     const opRef2 = activeOpRef.current;
     const lessonLabel2 = activeModeRef.current === "initial" ? "Initial Test"
-      : opRef2 === "geo" ? "Geometry" : opRef2 === "div" ? "Division"
-      : opRef2 === "sq" ? "Squares & Roots" : "Multiplication";
+      : opRef2 === "geo" ? "Geometry" : opRef2 === "add" ? "Addition"
+      : opRef2 === "div" ? "Division" : opRef2 === "sq" ? "Squares & Roots" : "Multiplication";
     logFact({ student_name: studentName ?? "", lesson: lessonLabel2, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: null });
     if (!isGeo(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, false);
     const skipExp = isGeo(pair) ? geoAnswer(pair) : { value: signedExpected(pair, questionSigns), hasPi: false };
@@ -619,6 +640,7 @@ export default function App() {
           label={activeMode === "initial" ? "Initial Test"
             : activeOpRef.current === "sq"  ? "Squares & Roots"
             : activeOpRef.current === "geo" ? "Geometry"
+            : activeOpRef.current === "add" ? "Addition"
             : activeOpRef.current === "div" ? "Division" : "Multiplication"}
           tag=""
           secondsLeft={secondsLeft}
@@ -709,7 +731,7 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
 
 function LobbyView({ initialDone, onReview, onInitialTest }: {
   initialDone: boolean;
-  onReview: (op: "mult" | "div" | "sq" | "geo") => void;
+  onReview: (op: "mult" | "div" | "sq" | "geo" | "add") => void;
   onInitialTest: () => void;
 }) {
   return (
@@ -738,6 +760,11 @@ function LobbyView({ initialDone, onReview, onInitialTest }: {
       <div className="op-section">
         <p className="lobby-heading">Geometry</p>
         <button className="btn-op btn-practice" onClick={() => onReview("geo")}>Practice</button>
+      </div>
+
+      <div className="op-section">
+        <p className="lobby-heading">Addition</p>
+        <button className="btn-op btn-practice" onClick={() => onReview("add")}>Practice</button>
       </div>
     </div>
   );
@@ -886,6 +913,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
   const isDiv  = pair.op === "div";
   const isSq   = pair.op === "sq";
   const isSqrt = pair.op === "sqrt";
+  const isAdd  = pair.op === "add";
   const geo     = isGeo(pair);
   const isCircle = pair.op === "g-ca-r" || pair.op === "g-ca-d" || pair.op === "g-cc-r" || pair.op === "g-cc-d";
 
@@ -903,6 +931,8 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
     ? <>&radic;{pair.a * pair.a} = ?</>
     : isDiv
     ? <>{dividend} &divide; {divisor} = ?</>
+    : isAdd
+    ? <>{pair.a} + {pair.b} = ?</>
     : <>{sA} &times; {sB} = ?</>;
 
   const fullFact = isSq
@@ -911,6 +941,8 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
     ? `√${pair.a * pair.a} = ${expected}`
     : isDiv
     ? `${dividend} ÷ ${divisor} = ${expected}`
+    : isAdd
+    ? `${pair.a} + ${pair.b} = ${expected}`
     : `${sA} × ${sB} = ${expected}`;
 
   const geoQ = geo ? geoQuestionText(pair) : null;
@@ -970,6 +1002,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
                 {isSq   ? <>{pair.a}<sup>2</sup> = {feedback.answer}</>
                 : isSqrt ? <>&radic;{pair.a * pair.a} = {feedback.answer}</>
                 : isDiv  ? <>{dividend} &divide; {divisor} = {feedback.answer}</>
+                : isAdd  ? <>{pair.a} + {pair.b} = {feedback.answer}</>
                 :          <>{sA} &times; {sB} = {feedback.answer}</>}
               </p>
             )}

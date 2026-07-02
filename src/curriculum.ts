@@ -12,8 +12,8 @@ export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g
 export interface Pair {
   a: number;
   b: number;
-  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; GeoOp = geometry
-  op?: "div" | "sq" | "sqrt" | GeoOp;
+  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp = geometry
+  op?: "div" | "sq" | "sqrt" | "add" | GeoOp;
   c?: number; // third side for triangle perimeter
 }
 
@@ -210,6 +210,43 @@ export function buildDivisionQueue(): Pair[] {
     }
   }
   return shuffle(pairs);
+}
+
+// 300 four-digit addition facts (sums in 1000–9999).
+export function buildAdditionQueue(): Pair[] {
+  const pool: [number, number][] = [];
+  const seen = new Set<string>();
+
+  const tryAdd = (a: number, b: number) => {
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    const sum = lo + hi;
+    if (sum < 1000 || sum > 9999) return;
+    const key = `${lo}+${hi}`;
+    if (!seen.has(key)) { seen.add(key); pool.push([lo, hi]); }
+  };
+
+  // 3-digit addends (100–999, varied steps)
+  const d3 = [100,125,150,175,200,225,250,275,300,325,350,375,400,425,450,475,
+              500,525,550,575,600,625,650,675,700,725,750,775,800,825,850,875,900,925,950,975,999];
+  // 4-digit addends (1000–4999)
+  const d4 = [1000,1250,1500,1750,2000,2250,2500,2750,3000,3250,3500,3750,4000,4250,4500,4750,4999];
+
+  // 3-digit + 3-digit with 4-digit sum
+  for (let i = 0; i < d3.length; i++)
+    for (let j = i; j < d3.length; j++)
+      tryAdd(d3[i], d3[j]);
+
+  // 4-digit + 3-digit
+  for (const a of d4)
+    for (const b of d3)
+      tryAdd(a, b);
+
+  // 4-digit + 4-digit
+  for (let i = 0; i < d4.length; i++)
+    for (let j = i; j < d4.length; j++)
+      tryAdd(d4[i], d4[j]);
+
+  return shuffle(pool).slice(0, 300).map(([a, b]) => ({ a, b, op: "add" as const }));
 }
 
 export function shuffle<T>(arr: T[]): T[] {
