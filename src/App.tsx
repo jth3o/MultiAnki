@@ -974,7 +974,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
               </p>
             )}
             <p className={`result-label ${feedback.correct ? "correct" : "incorrect"}`}>
-              {feedback.correct ? "Correct." : ""}
+              {feedback.correct ? "Correct." : "Incorrect."}
             </p>
             {!feedback.correct && (
               <div className="actions">
