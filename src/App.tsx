@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  DURATIONS, buildInitialQueue, buildDivisionQueue, buildThreeMinQueue, shuffle,
+  DURATIONS, buildInitialQueue, buildDivisionQueue, buildSquaresAndRootsQueue, buildThreeMinQueue, shuffle,
   type Pair, type SessionMode, type FactStat,
 } from "./curriculum";
 import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchPairWeights, upsertPairWeights, type PairWeight } from "./supabase";
@@ -16,9 +16,9 @@ function saveStudentName(n: string) { localStorage.setItem(NAME_KEY, n); }
 function clearStudentName() { localStorage.removeItem(NAME_KEY); }
 
 // Progress is stored in Supabase; this is just an in-memory type.
-interface Progress { mult: PairWeight[]; div: PairWeight[]; }
+interface Progress { mult: PairWeight[]; div: PairWeight[]; sq: PairWeight[]; sqrt: PairWeight[]; }
 
-function emptyProgress(): Progress { return { mult: [], div: [] }; }
+function emptyProgress(): Progress { return { mult: [], div: [], sq: [], sqrt: [] }; }
 
 // Merge session results into a weight array, returning updated weights.
 function mergeWeights(
@@ -26,7 +26,7 @@ function mergeWeights(
   mistakes: Pair[],
   corrects: Pair[],
   slows: Pair[],
-  op: "mult" | "div",
+  op: string,
 ): PairWeight[] {
   const key = (a: number, b: number) =>
     op === "div" ? `${a}x${b}` : `${Math.min(a,b)}x${Math.max(a,b)}`;
@@ -72,10 +72,9 @@ function randomSigns(): Signs {
 }
 
 function signedExpected(pair: Pair, signs: Signs): number {
-  if (pair.op === "div") {
-    // (a*b) ÷ b = a; negating dividend (negA) or divisor (negB) flips answer sign
-    return (signs.negA !== signs.negB) ? -pair.a : pair.a;
-  }
+  if (pair.op === "sq")   return pair.a * pair.a;
+  if (pair.op === "sqrt") return pair.a;
+  if (pair.op === "div")  return (signs.negA !== signs.negB) ? -pair.a : pair.a;
   return (signs.negA ? -pair.a : pair.a) * (signs.negB ? -pair.b : pair.b);
 }
 
@@ -128,7 +127,7 @@ export default function App() {
   const sessionCorrectsRef  = useRef<Pair[]>([]);
   const sessionSlowsRef     = useRef<Pair[]>([]);
   const activeModeRef       = useRef<SessionMode>("practice");
-  const activeOpRef         = useRef<"mult" | "div">("mult");
+  const activeOpRef         = useRef<"mult" | "div" | "sq">("mult");
   const sessionExpiredRef   = useRef(false);
   const sessionCorrectRef  = useRef(0);
   const sessionTotalRef    = useRef(0);
@@ -150,14 +149,16 @@ export default function App() {
     const name = loadStudentName();
     if (!name) return;
     (async () => {
-      const [done, multW, divW, durationStr] = await Promise.all([
+      const [done, multW, divW, sqW, sqrtW, durationStr] = await Promise.all([
         fetchInitialTestDone(name),
         fetchPairWeights(name, "mult"),
         fetchPairWeights(name, "div"),
+        fetchPairWeights(name, "sq"),
+        fetchPairWeights(name, "sqrt"),
         fetchSetting("practice_duration_secs", "300"),
       ]);
       setInitialDone(done);
-      setProgress({ mult: multW, div: divW });
+      setProgress({ mult: multW, div: divW, sq: sqW, sqrt: sqrtW });
       setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
       setPhase(done ? "lobby" : "initial-welcome");
       setAppReady(true);
@@ -196,6 +197,13 @@ export default function App() {
       const newWeights = mergeWeights(progressRef.current.mult, mistakes, [], [], "mult");
       setProgress((prev) => ({ ...prev, mult: newWeights }));
       upsertPairWeights(student, "mult", newWeights);
+    } else if (op === "sq") {
+      const filter = (pairs: Pair[], subOp: "sq" | "sqrt") => pairs.filter(p => p.op === subOp);
+      const newSq   = mergeWeights(progressRef.current.sq,   filter(mistakes,"sq"),   filter(corrects,"sq"),   filter(slows,"sq"),   "sq");
+      const newSqrt = mergeWeights(progressRef.current.sqrt, filter(mistakes,"sqrt"), filter(corrects,"sqrt"), filter(slows,"sqrt"), "sqrt");
+      setProgress((prev) => ({ ...prev, sq: newSq, sqrt: newSqrt }));
+      upsertPairWeights(student, "sq",   newSq);
+      upsertPairWeights(student, "sqrt", newSqrt);
     } else {
       const current = op === "div" ? progressRef.current.div : progressRef.current.mult;
       const newWeights = mergeWeights(current, mistakes, corrects, slows, op);
@@ -204,10 +212,11 @@ export default function App() {
     }
 
     const curPhase = phaseRef.current;
+    const opLabel = op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
     logSession({
       student_name: student,
       session_type: curPhase === "review" ? "review" : mode,
-      lesson: mode === "initial" ? "Initial Test" : curPhase === "review" ? `${op === "div" ? "Division" : "Multiplication"} Review` : op === "div" ? "Division" : "Multiplication",
+      lesson: mode === "initial" ? "Initial Test" : curPhase === "review" ? `${opLabel} Review` : opLabel,
       correct,
       total,
     });
@@ -250,7 +259,7 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
-    setQuestionSigns(randomSigns());
+    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
@@ -294,33 +303,54 @@ export default function App() {
 
   // ── Start review ───────────────────────────────────────────────────────────
 
-  const startReview = (op: "mult" | "div") => {
+  const startReview = (op: "mult" | "div" | "sq") => {
     isFinishingRef.current = false;
     sessionExpiredRef.current = false;
 
-    const weights = op === "div" ? progress.div : progress.mult;
-    const wKey = (a: number, b: number) =>
-      op === "div" ? `${a}x${b}` : `${Math.min(a,b)}x${Math.max(a,b)}`;
+    let q: Pair[];
 
-    const wMap = new Map<string, PairWeight>();
-    for (const w of weights) wMap.set(`${w.a}x${w.b}`, w);
+    if (op === "sq") {
+      // Squares and roots: combine sq and sqrt weights into a single weighted queue
+      const makeMap = (ws: PairWeight[]) => new Map(ws.map(w => [`${w.a}`, w]));
+      const sqMap   = makeMap(progress.sq);
+      const sqrtMap = makeMap(progress.sqrt);
 
-    const score = (a: number, b: number) => {
-      const w = wMap.get(wKey(a, b));
-      return (w?.wrongCount ?? 0) * 2 + Math.floor((w?.slowCount ?? 0) / 2);
-    };
+      const scoreFor = (p: Pair) => {
+        const w = p.op === "sqrt" ? sqrtMap.get(`${p.a}`) : sqMap.get(`${p.a}`);
+        return (w?.wrongCount ?? 0) * 2 + Math.floor((w?.slowCount ?? 0) / 2);
+      };
 
-    const allFacts = op === "div" ? buildDivisionQueue() : buildInitialQueue();
-    const weighted: Pair[] = [];
-    for (const p of allFacts) {
-      const reps = Math.min(6, 1 + score(p.a, p.b));
-      for (let i = 0; i < reps; i++) {
-        weighted.push(p);
-        if (op !== "div" && p.a !== p.b) weighted.push({ a: p.b, b: p.a });
+      const allFacts = buildSquaresAndRootsQueue();
+      const weighted: Pair[] = [];
+      for (const p of allFacts) {
+        const reps = Math.min(6, 1 + scoreFor(p));
+        for (let i = 0; i < reps; i++) weighted.push(p);
       }
-    }
+      q = shuffle(weighted).sort((a, b) => scoreFor(b) - scoreFor(a));
+    } else {
+      const weights = op === "div" ? progress.div : progress.mult;
+      const wKey = (a: number, b: number) =>
+        op === "div" ? `${a}x${b}` : `${Math.min(a,b)}x${Math.max(a,b)}`;
 
-    const q = shuffle(weighted).sort((a, b) => score(b.a, b.b) - score(a.a, a.b));
+      const wMap = new Map<string, PairWeight>();
+      for (const w of weights) wMap.set(`${w.a}x${w.b}`, w);
+
+      const score = (a: number, b: number) => {
+        const w = wMap.get(wKey(a, b));
+        return (w?.wrongCount ?? 0) * 2 + Math.floor((w?.slowCount ?? 0) / 2);
+      };
+
+      const allFacts = op === "div" ? buildDivisionQueue() : buildInitialQueue();
+      const weighted: Pair[] = [];
+      for (const p of allFacts) {
+        const reps = Math.min(6, 1 + score(p.a, p.b));
+        for (let i = 0; i < reps; i++) {
+          weighted.push(p);
+          if (p.a !== p.b) weighted.push({ a: p.b, b: p.a });
+        }
+      }
+      q = shuffle(weighted).sort((a, b) => score(b.a, b.b) - score(a.a, a.b));
+    }
 
     activeOpRef.current = op;
     setQueue(q);
@@ -329,7 +359,7 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
-    setQuestionSigns(randomSigns());
+    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
@@ -409,7 +439,7 @@ export default function App() {
       endSession();
     } else {
       setQueue(newQueue);
-      setQuestionSigns(randomSigns());
+      setQuestionSigns(newQueue[0]?.op === "sq" || newQueue[0]?.op === "sqrt" ? { negA: false, negB: false } : randomSigns());
       setPracPhase("question");
       setPracInput("");
       setPracFeedback(null);
@@ -429,10 +459,20 @@ export default function App() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (phase === "practice" && sessionMistakes.length > 0) {
       const op = activeOpRef.current;
-      const current = op === "div" ? progressRef.current.div : progressRef.current.mult;
-      const newWeights = mergeWeights(current, sessionMistakes, [], [], op);
-      setProgress((prev) => op === "div" ? { ...prev, div: newWeights } : { ...prev, mult: newWeights });
-      upsertPairWeights(studentName ?? "", op, newWeights);
+      if (op === "sq") {
+        const sqM   = sessionMistakes.filter(p => p.op === "sq");
+        const sqrtM = sessionMistakes.filter(p => p.op === "sqrt");
+        const newSq   = mergeWeights(progressRef.current.sq,   sqM,   [], [], "sq");
+        const newSqrt = mergeWeights(progressRef.current.sqrt, sqrtM, [], [], "sqrt");
+        setProgress((prev) => ({ ...prev, sq: newSq, sqrt: newSqrt }));
+        upsertPairWeights(studentName ?? "", "sq",   newSq);
+        upsertPairWeights(studentName ?? "", "sqrt", newSqrt);
+      } else {
+        const current = op === "div" ? progressRef.current.div : progressRef.current.mult;
+        const newWeights = mergeWeights(current, sessionMistakes, [], [], op);
+        setProgress((prev) => op === "div" ? { ...prev, div: newWeights } : { ...prev, mult: newWeights });
+        upsertPairWeights(studentName ?? "", op, newWeights);
+      }
     }
     setSecondsLeft(null);
     isFinishingRef.current = false;
@@ -442,16 +482,18 @@ export default function App() {
   // ── Sign in ────────────────────────────────────────────────────────────────
 
   const handleSignIn = async (name: string) => {
-    const [done, multW, divW, durationStr] = await Promise.all([
+    const [done, multW, divW, sqW, sqrtW, durationStr] = await Promise.all([
       fetchInitialTestDone(name),
       fetchPairWeights(name, "mult"),
       fetchPairWeights(name, "div"),
+      fetchPairWeights(name, "sq"),
+      fetchPairWeights(name, "sqrt"),
       fetchSetting("practice_duration_secs", "300"),
     ]);
     saveStudentName(name);
     setStudentName(name);
     setInitialDone(done);
-    setProgress({ mult: multW, div: divW });
+    setProgress({ mult: multW, div: divW, sq: sqW, sqrt: sqrtW });
     setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
     setAppReady(true);
     setPhase(done ? "lobby" : "initial-welcome");
@@ -510,6 +552,7 @@ export default function App() {
         <PracticeView
           label={activeMode === "initial"
             ? "Initial Test"
+            : activeOpRef.current === "sq" ? "Squares & Roots"
             : activeOpRef.current === "div" ? "Division" : "Multiplication"}
           tag=""
           secondsLeft={secondsLeft}
@@ -600,7 +643,7 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
 
 function LobbyView({ initialDone, onReview, onInitialTest }: {
   initialDone: boolean;
-  onReview: (op: "mult" | "div") => void;
+  onReview: (op: "mult" | "div" | "sq") => void;
   onInitialTest: () => void;
 }) {
   return (
@@ -613,16 +656,17 @@ function LobbyView({ initialDone, onReview, onInitialTest }: {
 
       <div className="op-section">
         <p className="lobby-heading">Multiplication</p>
-        <button className="btn-op btn-practice" onClick={() => onReview("mult")}>
-          Practice
-        </button>
+        <button className="btn-op btn-practice" onClick={() => onReview("mult")}>Practice</button>
       </div>
 
       <div className="op-section">
         <p className="lobby-heading">Division</p>
-        <button className="btn-op btn-practice" onClick={() => onReview("div")}>
-          Practice
-        </button>
+        <button className="btn-op btn-practice" onClick={() => onReview("div")}>Practice</button>
+      </div>
+
+      <div className="op-section">
+        <p className="lobby-heading">Squares &amp; Roots</p>
+        <button className="btn-op btn-practice" onClick={() => onReview("sq")}>Practice</button>
       </div>
     </div>
   );
@@ -653,20 +697,31 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
   onSubmit: () => void; onSkip: () => void; onNext: () => void; onBack: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
-  const isDiv = pair.op === "div";
+  const isDiv  = pair.op === "div";
+  const isSq   = pair.op === "sq";
+  const isSqrt = pair.op === "sqrt";
 
-  // Signed display values
+  // Signed display values (signs are always {false,false} for sq/sqrt)
   const sA = signs.negA ? -pair.a : pair.a;
   const sB = signs.negB ? -pair.b : pair.b;
   const dividend = isDiv ? (signs.negA ? -(pair.a * pair.b) : pair.a * pair.b) : null;
   const divisor  = isDiv ? sB : null;
 
-  const question = isDiv
+  const expected = signedExpected(pair, signs);
+
+  const question = isSq
+    ? <>{pair.a}<sup>2</sup> = ?</>
+    : isSqrt
+    ? <>&radic;{pair.a * pair.a} = ?</>
+    : isDiv
     ? <>{dividend} &divide; {divisor} = ?</>
     : <>{sA} &times; {sB} = ?</>;
 
-  const expected = signedExpected(pair, signs);
-  const fullFact = isDiv
+  const fullFact = isSq
+    ? `${pair.a}² = ${expected}`
+    : isSqrt
+    ? `√${pair.a * pair.a} = ${expected}`
+    : isDiv
     ? `${dividend} ÷ ${divisor} = ${expected}`
     : `${sA} × ${sB} = ${expected}`;
 
@@ -695,7 +750,12 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
       ) : (
         feedback && (
           <AutoAdvance correct={feedback.correct} onNext={onNext}>
-            <p className="problem">{isDiv ? <>{dividend} &divide; {divisor} = {feedback.answer}</> : <>{sA} &times; {sB} = {feedback.answer}</>}</p>
+            <p className="problem">
+              {isSq   ? <>{pair.a}<sup>2</sup> = {feedback.answer}</>
+              : isSqrt ? <>&radic;{pair.a * pair.a} = {feedback.answer}</>
+              : isDiv  ? <>{dividend} &divide; {divisor} = {feedback.answer}</>
+              :          <>{sA} &times; {sB} = {feedback.answer}</>}
+            </p>
             <p className={`result-label ${feedback.correct ? "correct" : "incorrect"}`}>
               {feedback.correct ? "Correct." : fullFact}
             </p>

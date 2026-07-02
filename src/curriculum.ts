@@ -1,7 +1,8 @@
 export interface Pair {
   a: number;
   b: number;
-  op?: "div"; // undefined = multiplication; "div" = (a*b) ÷ b = a
+  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²=a*a; "sqrt" = √(a²)=a
+  op?: "div" | "sq" | "sqrt";
 }
 
 export interface Lesson {
@@ -114,6 +115,16 @@ export function factsForLesson(lesson: Lesson): Pair[] {
     for (let b = 1; b <= 12; b++) pairs.push({ a, b });
   }
   return pairs;
+}
+
+// 24 squares-and-roots facts: n² and √(n²) for n in 1–12, shuffled together.
+export function buildSquaresAndRootsQueue(): Pair[] {
+  const pairs: Pair[] = [];
+  for (let n = 1; n <= 12; n++) {
+    pairs.push({ a: n, b: n, op: "sq" });
+    pairs.push({ a: n, b: n, op: "sqrt" });
+  }
+  return shuffle(pairs);
 }
 
 // All 144 division facts: (a×b) ÷ b = a for a,b in 1–12.
