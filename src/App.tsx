@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   DURATIONS, buildInitialQueue, buildDivisionQueue, buildSquaresAndRootsQueue, buildGeoQueue,
   buildThreeMinQueue, shuffle, isGeo, geoAnswer,
-  type Pair, type SessionMode, type FactStat, type GeoAnswer,
+  type Pair, type SessionMode, type FactStat,
 } from "./curriculum";
 import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, type PairWeight } from "./supabase";
 import "./App.css";
@@ -709,7 +709,7 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
 
 function LobbyView({ initialDone, onReview, onInitialTest }: {
   initialDone: boolean;
-  onReview: (op: "mult" | "div" | "sq") => void;
+  onReview: (op: "mult" | "div" | "sq" | "geo") => void;
   onInitialTest: () => void;
 }) {
   return (
