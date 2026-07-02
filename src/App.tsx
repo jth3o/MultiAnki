@@ -960,7 +960,11 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
         feedback && (
           <AutoAdvance correct={feedback.correct} onNext={onNext}>
             {geo ? (
-              <p className="problem">{geoAnswerText(pair, feedback)}</p>
+              <div className="geo-question">
+                <p className="geo-shape">{geoQ?.title}</p>
+                <GeoFigure pair={pair} />
+                <p className="problem">{geoAnswerText(pair, feedback)}</p>
+              </div>
             ) : (
               <p className="problem">
                 {isSq   ? <>{pair.a}<sup>2</sup> = {feedback.answer}</>
@@ -970,7 +974,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
               </p>
             )}
             <p className={`result-label ${feedback.correct ? "correct" : "incorrect"}`}>
-              {feedback.correct ? "Correct." : geo ? geoAnswerText(pair, feedback) : fullFact}
+              {feedback.correct ? "Correct." : ""}
             </p>
             {!feedback.correct && (
               <div className="actions">
