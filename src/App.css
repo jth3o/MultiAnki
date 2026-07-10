@@ -457,6 +457,28 @@ body {
 .geo-question svg {
   overflow: visible;
 }
+
+.conv-question {
+  text-align: center;
+  margin-bottom: 0.75rem;
+}
+.conv-given {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.25rem;
+}
+.conv-hint {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0 0 0.5rem;
+}
+.conv-percent-label {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
 .geo-shape {
   font-size: 1.1rem;
   font-weight: 600;

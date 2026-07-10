@@ -9,12 +9,63 @@
 //   g-cc-d = circle circumference, diameter (a=d)→ πd
 export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g-cc-r" | "g-cc-d";
 
+// Conversion op codes: conv-XY means "given X, answer in Y"
+//   f = fraction (a/b), d = decimal, p = percent
+export type ConvOp = "conv-fd" | "conv-fp" | "conv-df" | "conv-dp" | "conv-pf" | "conv-pd";
+
 export interface Pair {
   a: number;
   b: number;
-  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp = geometry
-  op?: "div" | "sq" | "sqrt" | "add" | GeoOp;
+  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp = geometry/conversions
+  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp;
   c?: number; // third side for triangle perimeter
+}
+
+export function isConv(pair: Pair): boolean {
+  return typeof pair.op === "string" && pair.op.startsWith("conv-");
+}
+
+export interface ConvAnswer {
+  given: string;       // shown to the student
+  answerStr: string;   // correct answer as string
+  isFraction: boolean; // answer is typed as "3/4"
+  isPercent: boolean;  // show % suffix next to input
+}
+
+export function convAnswer(pair: Pair): ConvAnswer {
+  const { a, b } = pair;
+  const dec = a / b;
+  const pct = dec * 100;
+  const decStr = String(parseFloat(dec.toFixed(10)));
+  const pctStr = String(parseFloat(pct.toFixed(10)));
+  const fracStr = `${a}/${b}`;
+  switch (pair.op) {
+    case "conv-fd": return { given: fracStr,        answerStr: decStr,  isFraction: false, isPercent: false };
+    case "conv-fp": return { given: fracStr,        answerStr: pctStr,  isFraction: false, isPercent: true  };
+    case "conv-df": return { given: decStr,         answerStr: fracStr, isFraction: true,  isPercent: false };
+    case "conv-dp": return { given: decStr,         answerStr: pctStr,  isFraction: false, isPercent: true  };
+    case "conv-pf": return { given: pctStr + "%",   answerStr: fracStr, isFraction: true,  isPercent: false };
+    case "conv-pd": return { given: pctStr + "%",   answerStr: decStr,  isFraction: false, isPercent: false };
+    default:        return { given: "",             answerStr: "",      isFraction: false, isPercent: false };
+  }
+}
+
+// Curated fractions with terminating decimal equivalents
+const CONV_FRACS: [number, number][] = [
+  [1,2], [1,4], [3,4],
+  [1,5], [2,5], [3,5], [4,5],
+  [1,8], [3,8], [5,8], [7,8],
+  [1,10], [3,10], [7,10], [9,10],
+];
+const CONV_OPS: ConvOp[] = ["conv-fd", "conv-fp", "conv-df", "conv-dp", "conv-pf", "conv-pd"];
+
+// 90 conversion facts: 15 fractions × 6 conversion directions
+export function buildConversionQueue(): Pair[] {
+  const pairs: Pair[] = [];
+  for (const [a, b] of CONV_FRACS)
+    for (const op of CONV_OPS)
+      pairs.push({ a, b, op });
+  return shuffle(pairs);
 }
 
 export function isGeo(pair: Pair): boolean {

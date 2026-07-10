@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   DURATIONS, buildInitialQueue, buildDivisionQueue, buildSquaresAndRootsQueue, buildGeoQueue,
-  buildAdditionQueue, buildThreeMinQueue, shuffle, isGeo, geoAnswer,
-  type Pair, type SessionMode, type FactStat,
+  buildAdditionQueue, buildConversionQueue, buildThreeMinQueue, shuffle, isGeo, geoAnswer, isConv, convAnswer,
+  type Pair, type SessionMode, type FactStat, type ConvOp,
 } from "./curriculum";
 import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, type PairWeight } from "./supabase";
 import "./App.css";
@@ -21,17 +21,19 @@ interface Progress {
   mult: PairWeight[]; div: PairWeight[];
   sq: PairWeight[];   sqrt: PairWeight[];
   add: PairWeight[];
-  geo: Record<string, PairWeight[]>; // keyed by GeoOp string
+  geo:  Record<string, PairWeight[]>; // keyed by GeoOp string
+  conv: Record<string, PairWeight[]>; // keyed by ConvOp string
 }
 
-function emptyProgress(): Progress { return { mult: [], div: [], sq: [], sqrt: [], add: [], geo: {} }; }
+function emptyProgress(): Progress { return { mult: [], div: [], sq: [], sqrt: [], add: [], geo: {}, conv: {} }; }
 
 function progressFromWeightMap(m: Record<string, PairWeight[]>): Progress {
   return {
     mult: m["mult"] ?? [], div:  m["div"]  ?? [],
     sq:   m["sq"]   ?? [], sqrt: m["sqrt"] ?? [],
     add:  m["add"]  ?? [],
-    geo: Object.fromEntries(Object.entries(m).filter(([k]) => k.startsWith("g-"))),
+    geo:  Object.fromEntries(Object.entries(m).filter(([k]) => k.startsWith("g-"))),
+    conv: Object.fromEntries(Object.entries(m).filter(([k]) => k.startsWith("conv-"))),
   };
 }
 
@@ -43,10 +45,11 @@ function mergeWeights(
   slows: Pair[],
   op: string,
 ): PairWeight[] {
+  const directional = op === "div" || op.startsWith("conv-");
   const key = (a: number, b: number) =>
-    op === "div" ? `${a}x${b}` : `${Math.min(a,b)}x${Math.max(a,b)}`;
-  const canonA = (p: Pair) => op === "div" ? p.a : Math.min(p.a, p.b);
-  const canonB = (p: Pair) => op === "div" ? p.b : Math.max(p.a, p.b);
+    directional ? `${a}x${b}` : `${Math.min(a,b)}x${Math.max(a,b)}`;
+  const canonA = (p: Pair) => directional ? p.a : Math.min(p.a, p.b);
+  const canonB = (p: Pair) => directional ? p.b : Math.max(p.a, p.b);
 
   const map = new Map<string, PairWeight>();
   for (const w of current) map.set(key(w.a, w.b), { ...w });
@@ -90,6 +93,7 @@ function signedExpected(pair: Pair, signs: Signs): number {
   if (pair.op === "sq")   return pair.a * pair.a;
   if (pair.op === "sqrt") return pair.a;
   if (pair.op === "add")  return pair.a + pair.b;
+  if (isConv(pair))       return pair.a / pair.b; // unused at runtime; conv handled separately
   if (pair.op === "div")  return (signs.negA !== signs.negB) ? -pair.a : pair.a;
   return (signs.negA ? -pair.a : pair.a) * (signs.negB ? -pair.b : pair.b);
 }
@@ -98,7 +102,7 @@ function signedExpected(pair: Pair, signs: Signs): number {
 
 type AppPhase = "lobby" | "initial-welcome" | "loading" | "practice" | "review" | "session-done";
 
-interface PracticeFeedback { correct: boolean; answer: number; hasPi?: boolean; }
+interface PracticeFeedback { correct: boolean; answer: number; hasPi?: boolean; answerText?: string; }
 
 interface SessionResult {
   mode: SessionMode | "review";
@@ -143,7 +147,7 @@ export default function App() {
   const sessionCorrectsRef  = useRef<Pair[]>([]);
   const sessionSlowsRef     = useRef<Pair[]>([]);
   const activeModeRef       = useRef<SessionMode>("practice");
-  const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo" | "add">("mult");
+  const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo" | "add" | "conv">("mult");
   const sessionExpiredRef   = useRef(false);
   const sessionCorrectRef  = useRef(0);
   const sessionTotalRef    = useRef(0);
@@ -227,6 +231,15 @@ export default function App() {
         upsertPairWeights(student, gOp, newGeo[gOp]);
       }
       setProgress((prev) => ({ ...prev, geo: newGeo }));
+    } else if (op === "conv") {
+      const convOps = [...new Set([...mistakes, ...corrects, ...slows].map(p => p.op as string))];
+      const newConv = { ...progressRef.current.conv };
+      for (const cOp of convOps) {
+        const f = (ps: Pair[]) => ps.filter(p => p.op === cOp);
+        newConv[cOp] = mergeWeights(newConv[cOp] ?? [], f(mistakes), f(corrects), f(slows), cOp);
+        upsertPairWeights(student, cOp, newConv[cOp]);
+      }
+      setProgress((prev) => ({ ...prev, conv: newConv }));
     } else if (op === "add") {
       const newWeights = mergeWeights(progressRef.current.add, mistakes, corrects, slows, "add");
       setProgress((prev) => ({ ...prev, add: newWeights }));
@@ -239,7 +252,7 @@ export default function App() {
     }
 
     const curPhase = phaseRef.current;
-    const opLabel = op === "geo" ? "Geometry" : op === "add" ? "Addition" : op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
+    const opLabel = op === "geo" ? "Geometry" : op === "conv" ? "Conversions" : op === "add" ? "Addition" : op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
     logSession({
       student_name: student,
       session_type: curPhase === "review" ? "review" : mode,
@@ -286,7 +299,7 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
-    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
+    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
@@ -330,7 +343,7 @@ export default function App() {
 
   // ── Start review ───────────────────────────────────────────────────────────
 
-  const startReview = (op: "mult" | "div" | "sq" | "geo" | "add") => {
+  const startReview = (op: "mult" | "div" | "sq" | "geo" | "add" | "conv") => {
     isFinishingRef.current = false;
     sessionExpiredRef.current = false;
 
@@ -370,6 +383,19 @@ export default function App() {
         for (let i = 0; i < reps; i++) weighted.push(p);
       }
       q = shuffle(weighted).sort((a, b) => geoScoreFor(b) - geoScoreFor(a));
+    } else if (op === "conv") {
+      const convScoreFor = (p: Pair) => {
+        const wList = progress.conv[p.op as string] ?? [];
+        const w = wList.find(w => w.a === p.a && w.b === p.b);
+        return (w?.wrongCount ?? 0) * 2 + Math.floor((w?.slowCount ?? 0) / 2);
+      };
+      const allFacts = buildConversionQueue();
+      const weighted: Pair[] = [];
+      for (const p of allFacts) {
+        const reps = Math.min(6, 1 + convScoreFor(p));
+        for (let i = 0; i < reps; i++) weighted.push(p);
+      }
+      q = shuffle(weighted).sort((a, b) => convScoreFor(b) - convScoreFor(a));
     } else if (op === "add") {
       const wMap = new Map<string, PairWeight>();
       for (const w of progress.add) wMap.set(`${Math.min(w.a,w.b)}x${Math.max(w.a,w.b)}`, w);
@@ -416,11 +442,11 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
-    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
+    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
-    setSecondsLeft(op === "geo" ? 900 : practiceDurationSecs);
+    setSecondsLeft(op === "geo" ? 900 : op === "conv" ? 900 : practiceDurationSecs);
     setPhase("review");
 
     // Soft timer: marks expired, ends at next question boundary
@@ -445,10 +471,23 @@ export default function App() {
     const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
 
     let correct: boolean;
-    let expectedNum: number;
+    let expectedNum: number = 0;
     let hasPi = false;
+    let answerText: string | undefined;
 
-    if (isGeo(pair)) {
+    if (isConv(pair)) {
+      const ca = convAnswer(pair);
+      const raw = pracInput.trim().replace(/\s/g, "");
+      if (ca.isFraction) {
+        correct = raw === ca.answerStr;
+        answerText = ca.answerStr;
+      } else {
+        const parsed = parseFloat(raw);
+        const expected2 = parseFloat(ca.answerStr);
+        correct = Math.abs(parsed - expected2) < 0.0001;
+        expectedNum = expected2;
+      }
+    } else if (isGeo(pair)) {
       const exp = geoAnswer(pair);
       expectedNum = exp.value;
       hasPi = exp.hasPi;
@@ -476,11 +515,11 @@ export default function App() {
     const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
     const opRef = activeOpRef.current;
     const lessonLabel = activeModeRef.current === "initial" ? "Initial Test"
-      : opRef === "geo" ? "Geometry" : opRef === "add" ? "Addition"
+      : opRef === "geo" ? "Geometry" : opRef === "conv" ? "Conversions" : opRef === "add" ? "Addition"
       : opRef === "div" ? "Division" : opRef === "sq" ? "Squares & Roots" : "Multiplication";
     logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: expectedNum, correct, time_seconds: correct ? elapsed : null });
-    if (!isGeo(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
-    setPracFeedback({ correct, answer: expectedNum, hasPi });
+    if (!isGeo(pair) && !isConv(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
+    setPracFeedback({ correct, answer: expectedNum, hasPi, answerText });
     setPracPhase("feedback");
   };
 
@@ -492,12 +531,17 @@ export default function App() {
     const sessionMode = phaseRef.current === "review" ? "review" : activeModeRef.current;
     const opRef2 = activeOpRef.current;
     const lessonLabel2 = activeModeRef.current === "initial" ? "Initial Test"
-      : opRef2 === "geo" ? "Geometry" : opRef2 === "add" ? "Addition"
+      : opRef2 === "geo" ? "Geometry" : opRef2 === "conv" ? "Conversions" : opRef2 === "add" ? "Addition"
       : opRef2 === "div" ? "Division" : opRef2 === "sq" ? "Squares & Roots" : "Multiplication";
     logFact({ student_name: studentName ?? "", lesson: lessonLabel2, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: null });
-    if (!isGeo(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, false);
-    const skipExp = isGeo(pair) ? geoAnswer(pair) : { value: signedExpected(pair, questionSigns), hasPi: false };
-    setPracFeedback({ correct: false, answer: skipExp.value, hasPi: skipExp.hasPi });
+    if (!isGeo(pair) && !isConv(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, false);
+    if (isConv(pair)) {
+      const ca = convAnswer(pair);
+      setPracFeedback({ correct: false, answer: ca.isFraction ? 0 : parseFloat(ca.answerStr), answerText: ca.isFraction ? ca.answerStr : undefined });
+    } else {
+      const skipExp = isGeo(pair) ? geoAnswer(pair) : { value: signedExpected(pair, questionSigns), hasPi: false };
+      setPracFeedback({ correct: false, answer: skipExp.value, hasPi: skipExp.hasPi });
+    }
     setPracPhase("feedback");
   };
 
@@ -638,10 +682,11 @@ export default function App() {
       {(phase === "practice" || phase === "review") && queue.length > 0 && (
         <PracticeView
           label={activeMode === "initial" ? "Initial Test"
-            : activeOpRef.current === "sq"  ? "Squares & Roots"
-            : activeOpRef.current === "geo" ? "Geometry"
-            : activeOpRef.current === "add" ? "Addition"
-            : activeOpRef.current === "div" ? "Division" : "Multiplication"}
+            : activeOpRef.current === "sq"   ? "Squares & Roots"
+            : activeOpRef.current === "geo"  ? "Geometry"
+            : activeOpRef.current === "conv" ? "Conversions"
+            : activeOpRef.current === "add"  ? "Addition"
+            : activeOpRef.current === "div"  ? "Division" : "Multiplication"}
           tag=""
           secondsLeft={secondsLeft}
           pair={queue[0]}
@@ -731,7 +776,7 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
 
 function LobbyView({ initialDone, onReview, onInitialTest }: {
   initialDone: boolean;
-  onReview: (op: "mult" | "div" | "sq" | "geo" | "add") => void;
+  onReview: (op: "mult" | "div" | "sq" | "geo" | "add" | "conv") => void;
   onInitialTest: () => void;
 }) {
   return (
@@ -765,6 +810,11 @@ function LobbyView({ initialDone, onReview, onInitialTest }: {
       <div className="op-section">
         <p className="lobby-heading">Addition</p>
         <button className="btn-op btn-practice" onClick={() => onReview("add")}>Practice</button>
+      </div>
+
+      <div className="op-section">
+        <p className="lobby-heading">Conversions</p>
+        <button className="btn-op btn-practice" onClick={() => onReview("conv")}>Practice</button>
       </div>
     </div>
   );
@@ -915,7 +965,14 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
   const isSqrt = pair.op === "sqrt";
   const isAdd  = pair.op === "add";
   const geo     = isGeo(pair);
+  const conv    = isConv(pair);
   const isCircle = pair.op === "g-ca-r" || pair.op === "g-ca-d" || pair.op === "g-cc-r" || pair.op === "g-cc-d";
+  const convQ   = conv ? convAnswer(pair) : null;
+  const convHint = (op: ConvOp) => {
+    if (op === "conv-fd" || op === "conv-pd") return "Write as a decimal (e.g. 0.75)";
+    if (op === "conv-fp" || op === "conv-dp") return "Write as a percent number (e.g. 75)";
+    return "Write as a fraction (e.g. 3/4)";
+  };
 
   // Signed display values (signs are always {false,false} for sq/sqrt/geo)
   const sA = signs.negA ? -pair.a : pair.a;
@@ -954,7 +1011,12 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
 
       {pracPhase === "question" ? (
         <>
-          {geo && geoQ ? (
+          {conv && convQ ? (
+            <div className="conv-question">
+              <p className="conv-given">{convQ.given}</p>
+              <p className="conv-hint">{convHint(pair.op as ConvOp)}</p>
+            </div>
+          ) : geo && geoQ ? (
             <div className="geo-question">
               <p className="geo-shape">{geoQ.title}</p>
               <GeoFigure pair={pair} />
@@ -965,13 +1027,14 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
           )}
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "center" }}>
             <input ref={inputRef} className="answer-input"
-              type={geo ? "text" : "number"} inputMode={geo && isCircle ? "text" : "numeric"}
+              type={(geo || conv) ? "text" : "number"} inputMode={geo && isCircle ? "text" : "numeric"}
               value={input} onChange={(e) => onInput(e.target.value)} onKeyDown={onKeyDown}
-              placeholder={isCircle ? "e.g. 25π" : "your answer"}
+              placeholder={isCircle ? "e.g. 25π" : convQ?.isFraction ? "e.g. 3/4" : "your answer"}
               style={{ flex: 1 }} />
             {isCircle && (
               <button className="btn-pi" onClick={appendPi} type="button">π</button>
             )}
+            {convQ?.isPercent && <span className="conv-percent-label">%</span>}
           </div>
           <div className="actions">
             <button className="btn-primary" onClick={onSubmit} disabled={!input.trim()}>Submit</button>
@@ -981,7 +1044,11 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
       ) : (
         feedback && (
           <AutoAdvance correct={feedback.correct} onNext={onNext}>
-            {geo ? (
+            {conv && convQ ? (
+              <div className="conv-question">
+                <p className="conv-given">{convQ.given} = <strong>{feedback.answerText ?? (convQ.isPercent ? `${feedback.answer}%` : feedback.answer)}</strong></p>
+              </div>
+            ) : geo ? (
               <div className="geo-question">
                 <p className="geo-shape">{geoQ?.title}</p>
                 <GeoFigure pair={pair} />
