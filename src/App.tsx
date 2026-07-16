@@ -704,7 +704,6 @@ export default function App() {
       {phase === "lobby" && (
         <LobbyView
           initialDone={initialDone}
-          eqPoints={eqPoints}
           onReview={startReview}
           onInitialTest={() => setPhase("initial-welcome")}
         />
@@ -856,7 +855,7 @@ function LobbyView({ initialDone, onReview, onInitialTest }: {
       <div className="op-section">
         <p className="lobby-heading">Solving Equations</p>
         <button className="btn-op btn-practice" onClick={() => onReview("eq")}>
-          {eqPoints >= 200 ? "Review" : "Practice"}
+          Practice
         </button>
       </div>
     </div>
