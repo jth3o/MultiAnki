@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   DURATIONS, buildInitialQueue, buildDivisionQueue, buildSquaresAndRootsQueue, buildGeoQueue,
-  buildAdditionQueue, buildConversionQueue, buildThreeMinQueue, shuffle, isGeo, geoAnswer, isConv, convAnswer,
+  buildAdditionQueue, buildConversionQueue, buildEquationQueue, buildThreeMinQueue, shuffle,
+  isGeo, geoAnswer, isConv, convAnswer, isEq, eqLevel,
   type Pair, type SessionMode, type FactStat, type ConvOp,
 } from "./curriculum";
-import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, type PairWeight } from "./supabase";
+import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, fetchEqPoints, upsertEqPoints, type PairWeight } from "./supabase";
 import "./App.css";
 
 // ─── localStorage (name only) ─────────────────────────────────────────────────
@@ -119,6 +120,7 @@ export default function App() {
   const [initialDone, setInitialDone]         = useState<boolean>(false);
   const [appReady, setAppReady]               = useState<boolean>(!loadStudentName()); // false when name known but data not yet fetched
   const [practiceDurationSecs, setPracticeDurationSecs] = useState<number>(300);
+  const [eqPoints, setEqPoints]               = useState<number>(0);
   const [phase, setPhase]                     = useState<AppPhase>("lobby");
   const [activeMode, setActiveMode]           = useState<SessionMode>("practice");
 
@@ -147,7 +149,8 @@ export default function App() {
   const sessionCorrectsRef  = useRef<Pair[]>([]);
   const sessionSlowsRef     = useRef<Pair[]>([]);
   const activeModeRef       = useRef<SessionMode>("practice");
-  const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo" | "add" | "conv">("mult");
+  const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq">("mult");
+  const eqPointsRef         = useRef<number>(0);
   const sessionExpiredRef   = useRef(false);
   const sessionCorrectRef  = useRef(0);
   const sessionTotalRef    = useRef(0);
@@ -163,20 +166,23 @@ export default function App() {
   useEffect(() => { studentNameRef.current = studentName; },           [studentName]);
   useEffect(() => { phaseRef.current = phase; },                       [phase]);
   useEffect(() => { progressRef.current = progress; },                 [progress]);
+  useEffect(() => { eqPointsRef.current = eqPoints; },                [eqPoints]);
 
   // When the student name is already remembered, fetch their data from Supabase on mount.
   useEffect(() => {
     const name = loadStudentName();
     if (!name) return;
     (async () => {
-      const [done, allWeights, durationStr] = await Promise.all([
+      const [done, allWeights, durationStr, eqPts] = await Promise.all([
         fetchInitialTestDone(name),
         fetchAllPairWeights(name),
         fetchSetting("practice_duration_secs", "300"),
+        fetchEqPoints(name),
       ]);
       setInitialDone(done);
       setProgress(progressFromWeightMap(allWeights));
       setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
+      setEqPoints(eqPts);
       setPhase(done ? "lobby" : "initial-welcome");
       setAppReady(true);
     })();
@@ -244,6 +250,11 @@ export default function App() {
       const newWeights = mergeWeights(progressRef.current.add, mistakes, corrects, slows, "add");
       setProgress((prev) => ({ ...prev, add: newWeights }));
       upsertPairWeights(student, "add", newWeights);
+    } else if (op === "eq") {
+      const delta = corrects.length - mistakes.length * 0.2;
+      const newPts = Math.min(200, Math.max(0, eqPointsRef.current + delta));
+      upsertEqPoints(student, newPts);
+      setEqPoints(newPts);
     } else {
       const current = op === "div" ? progressRef.current.div : progressRef.current.mult;
       const newWeights = mergeWeights(current, mistakes, corrects, slows, op);
@@ -252,7 +263,7 @@ export default function App() {
     }
 
     const curPhase = phaseRef.current;
-    const opLabel = op === "geo" ? "Geometry" : op === "conv" ? "Conversions" : op === "add" ? "Addition" : op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
+    const opLabel = op === "geo" ? "Geometry" : op === "conv" ? "Conversions" : op === "add" ? "Addition" : op === "eq" ? "Solving Equations" : op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
     logSession({
       student_name: student,
       session_type: curPhase === "review" ? "review" : mode,
@@ -299,7 +310,7 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
-    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
+    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) || isEq(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
@@ -343,7 +354,7 @@ export default function App() {
 
   // ── Start review ───────────────────────────────────────────────────────────
 
-  const startReview = (op: "mult" | "div" | "sq" | "geo" | "add" | "conv") => {
+  const startReview = (op: "mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq") => {
     isFinishingRef.current = false;
     sessionExpiredRef.current = false;
 
@@ -396,6 +407,9 @@ export default function App() {
         for (let i = 0; i < reps; i++) weighted.push(p);
       }
       q = shuffle(weighted).sort((a, b) => convScoreFor(b) - convScoreFor(a));
+    } else if (op === "eq") {
+      const level = eqLevel(eqPoints);
+      q = buildEquationQueue(level);
     } else if (op === "add") {
       const wMap = new Map<string, PairWeight>();
       for (const w of progress.add) wMap.set(`${Math.min(w.a,w.b)}x${Math.max(w.a,w.b)}`, w);
@@ -442,11 +456,11 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
-    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
+    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) || isEq(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
-    setSecondsLeft(op === "geo" ? 900 : op === "conv" ? 900 : practiceDurationSecs);
+    setSecondsLeft(op === "geo" || op === "conv" || op === "eq" ? 900 : practiceDurationSecs);
     setPhase("review");
 
     // Soft timer: marks expired, ends at next question boundary
@@ -475,7 +489,20 @@ export default function App() {
     let hasPi = false;
     let answerText: string | undefined;
 
-    if (isConv(pair)) {
+    if (isEq(pair)) {
+      if (pair.op === "eq-l4") {
+        // Two solutions: accept "a, b" in any order
+        const parts = pracInput.trim().split(",").map(s => parseInt(s.trim(), 10));
+        const sorted = [...parts].sort((a, b) => b - a);
+        correct = parts.length === 2 && !isNaN(sorted[0]) && !isNaN(sorted[1])
+          && sorted[0] === (pair.answer ?? 0) && sorted[1] === (pair.c ?? 0);
+        expectedNum = pair.answer ?? 0;
+        answerText = `${pair.answer}, ${pair.c}`;
+      } else {
+        expectedNum = pair.answer ?? 0;
+        correct = parseInt(pracInput.trim(), 10) === expectedNum;
+      }
+    } else if (isConv(pair)) {
       const ca = convAnswer(pair);
       const raw = pracInput.trim().replace(/\s/g, "");
       if (ca.isFraction) {
@@ -516,9 +543,10 @@ export default function App() {
     const opRef = activeOpRef.current;
     const lessonLabel = activeModeRef.current === "initial" ? "Initial Test"
       : opRef === "geo" ? "Geometry" : opRef === "conv" ? "Conversions" : opRef === "add" ? "Addition"
+      : opRef === "eq" ? "Solving Equations"
       : opRef === "div" ? "Division" : opRef === "sq" ? "Squares & Roots" : "Multiplication";
     logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: expectedNum, correct, time_seconds: correct ? elapsed : null });
-    if (!isGeo(pair) && !isConv(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
+    if (!isGeo(pair) && !isConv(pair) && !isEq(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
     setPracFeedback({ correct, answer: expectedNum, hasPi, answerText });
     setPracPhase("feedback");
   };
@@ -532,10 +560,14 @@ export default function App() {
     const opRef2 = activeOpRef.current;
     const lessonLabel2 = activeModeRef.current === "initial" ? "Initial Test"
       : opRef2 === "geo" ? "Geometry" : opRef2 === "conv" ? "Conversions" : opRef2 === "add" ? "Addition"
+      : opRef2 === "eq" ? "Solving Equations"
       : opRef2 === "div" ? "Division" : opRef2 === "sq" ? "Squares & Roots" : "Multiplication";
     logFact({ student_name: studentName ?? "", lesson: lessonLabel2, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: null });
-    if (!isGeo(pair) && !isConv(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, false);
-    if (isConv(pair)) {
+    if (!isGeo(pair) && !isConv(pair) && !isEq(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, false);
+    if (isEq(pair)) {
+      const ansText = pair.op === "eq-l4" ? `${pair.answer}, ${pair.c}` : undefined;
+      setPracFeedback({ correct: false, answer: pair.answer ?? 0, answerText: ansText });
+    } else if (isConv(pair)) {
       const ca = convAnswer(pair);
       setPracFeedback({ correct: false, answer: ca.isFraction ? 0 : parseFloat(ca.answerStr), answerText: ca.isFraction ? ca.answerStr : undefined });
     } else {
@@ -564,7 +596,7 @@ export default function App() {
       endSession();
     } else {
       setQueue(newQueue);
-      setQuestionSigns(newQueue[0]?.op === "sq" || newQueue[0]?.op === "sqrt" ? { negA: false, negB: false } : randomSigns());
+      setQuestionSigns(newQueue[0]?.op === "sq" || newQueue[0]?.op === "sqrt" || isGeo(newQueue[0] ?? {}) || isConv(newQueue[0] ?? {}) || isEq(newQueue[0] ?? {}) || newQueue[0]?.op === "add" ? { negA: false, negB: false } : randomSigns());
       setPracPhase("question");
       setPracInput("");
       setPracFeedback(null);
@@ -616,16 +648,18 @@ export default function App() {
   // ── Sign in ────────────────────────────────────────────────────────────────
 
   const handleSignIn = async (name: string) => {
-    const [done, allWeights, durationStr] = await Promise.all([
+    const [done, allWeights, durationStr, eqPts] = await Promise.all([
       fetchInitialTestDone(name),
       fetchAllPairWeights(name),
       fetchSetting("practice_duration_secs", "300"),
+      fetchEqPoints(name),
     ]);
     saveStudentName(name);
     setStudentName(name);
     setInitialDone(done);
     setProgress(progressFromWeightMap(allWeights));
     setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
+    setEqPoints(eqPts);
     setAppReady(true);
     setPhase(done ? "lobby" : "initial-welcome");
   };
@@ -670,6 +704,7 @@ export default function App() {
       {phase === "lobby" && (
         <LobbyView
           initialDone={initialDone}
+          eqPoints={eqPoints}
           onReview={startReview}
           onInitialTest={() => setPhase("initial-welcome")}
         />
@@ -686,6 +721,7 @@ export default function App() {
             : activeOpRef.current === "geo"  ? "Geometry"
             : activeOpRef.current === "conv" ? "Conversions"
             : activeOpRef.current === "add"  ? "Addition"
+            : activeOpRef.current === "eq"   ? "Solving Equations"
             : activeOpRef.current === "div"  ? "Division" : "Multiplication"}
           tag=""
           secondsLeft={secondsLeft}
@@ -772,11 +808,47 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
   );
 }
 
+// ─── Equation progress ────────────────────────────────────────────────────────
+
+const LEVEL_NAMES = ["Simple", "Multi-Step", "Both Sides", "Absolute Value"];
+
+function EqProgress({ points }: { points: number }) {
+  const squaresPerLevel = 5, pointsPerSquare = 10;
+  return (
+    <div className="eq-progress">
+      {LEVEL_NAMES.map((name, lvl) => {
+        const levelStart = lvl * 50;
+        const levelPoints = Math.max(0, Math.min(50, points - levelStart));
+        const filledFull = Math.floor(levelPoints / pointsPerSquare);
+        const partial = (levelPoints % pointsPerSquare) / pointsPerSquare;
+        return (
+          <div key={lvl} className="eq-level-row">
+            <span className="eq-level-name">{name}</span>
+            <div className="eq-squares">
+              {Array.from({ length: squaresPerLevel }, (_, i) => {
+                const filled = i < filledFull;
+                const isPartial = i === filledFull && partial > 0 && levelPoints < 50;
+                return (
+                  <div key={i}
+                    className={`eq-sq ${filled ? "filled" : isPartial ? "partial" : "empty"}`}
+                    style={isPartial ? { "--fill": `${partial * 100}%` } as React.CSSProperties : {}}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Lobby ────────────────────────────────────────────────────────────────────
 
-function LobbyView({ initialDone, onReview, onInitialTest }: {
+function LobbyView({ initialDone, eqPoints, onReview, onInitialTest }: {
   initialDone: boolean;
-  onReview: (op: "mult" | "div" | "sq" | "geo" | "add" | "conv") => void;
+  eqPoints: number;
+  onReview: (op: "mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq") => void;
   onInitialTest: () => void;
 }) {
   return (
@@ -815,6 +887,14 @@ function LobbyView({ initialDone, onReview, onInitialTest }: {
       <div className="op-section">
         <p className="lobby-heading">Conversions</p>
         <button className="btn-op btn-practice" onClick={() => onReview("conv")}>Practice</button>
+      </div>
+
+      <div className="op-section">
+        <p className="lobby-heading">Solving Equations</p>
+        <EqProgress points={eqPoints} />
+        <button className="btn-op btn-practice" onClick={() => onReview("eq")}>
+          {eqPoints >= 200 ? "Review" : "Practice"}
+        </button>
       </div>
     </div>
   );
@@ -964,6 +1044,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
   const isSq   = pair.op === "sq";
   const isSqrt = pair.op === "sqrt";
   const isAdd  = pair.op === "add";
+  const eq      = isEq(pair);
   const geo     = isGeo(pair);
   const conv    = isConv(pair);
   const isCircle = pair.op === "g-ca-r" || pair.op === "g-ca-d" || pair.op === "g-cc-r" || pair.op === "g-cc-d";
@@ -1011,7 +1092,12 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
 
       {pracPhase === "question" ? (
         <>
-          {conv && convQ ? (
+          {eq ? (
+            <div className="conv-question">
+              <p className="conv-given">{pair.eqStr}</p>
+              {pair.op === "eq-l4" && <p className="conv-hint">Enter both solutions separated by a comma (e.g. 5, −3)</p>}
+            </div>
+          ) : conv && convQ ? (
             <div className="conv-question">
               <p className="conv-given">{convQ.given}</p>
               <p className="conv-hint">{convHint(pair.op as ConvOp)}</p>
@@ -1027,9 +1113,9 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
           )}
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "center" }}>
             <input ref={inputRef} className="answer-input"
-              type={(geo || conv) ? "text" : "number"} inputMode={geo && isCircle ? "text" : "numeric"}
+              type={(geo || conv || eq) ? "text" : "number"} inputMode={geo && isCircle ? "text" : "numeric"}
               value={input} onChange={(e) => onInput(e.target.value)} onKeyDown={onKeyDown}
-              placeholder={isCircle ? "e.g. 25π" : convQ?.isFraction ? "e.g. 3/4" : "your answer"}
+              placeholder={isCircle ? "e.g. 25π" : convQ?.isFraction ? "e.g. 3/4" : eq ? (pair.op === "eq-l4" ? "e.g. 5, −3" : "x = ?") : "your answer"}
               style={{ flex: 1 }} />
             {isCircle && (
               <button className="btn-pi" onClick={appendPi} type="button">π</button>
@@ -1044,7 +1130,12 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
       ) : (
         feedback && (
           <AutoAdvance correct={feedback.correct} onNext={onNext}>
-            {conv && convQ ? (
+            {eq ? (
+              <div className="conv-question">
+                <p className="conv-given">{pair.eqStr}</p>
+                <p className="conv-given">x = <strong>{feedback.answerText ?? feedback.answer}</strong></p>
+              </div>
+            ) : conv && convQ ? (
               <div className="conv-question">
                 <p className="conv-given">{convQ.given} = <strong>{feedback.answerText ?? (convQ.isPercent ? `${feedback.answer}%` : feedback.answer)}</strong></p>
               </div>

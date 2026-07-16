@@ -581,3 +581,16 @@ body {
   border-color: #c0bdb8;
   color: var(--text);
 }
+
+/* ── Equation progress squares ───────────────────────────────────────────────── */
+
+.eq-progress { display: flex; flex-direction: column; gap: 0.35rem; width: 100%; margin-bottom: 0.25rem; }
+.eq-level-row { display: flex; align-items: center; gap: 0.5rem; }
+.eq-level-name { font-size: 0.75rem; color: var(--muted); width: 85px; flex-shrink: 0; }
+.eq-squares { display: flex; gap: 3px; }
+.eq-sq { width: 18px; height: 18px; border: 1.5px solid var(--accent); border-radius: 3px; }
+.eq-sq.filled { background: var(--accent); }
+.eq-sq.empty { background: transparent; opacity: 0.35; }
+.eq-sq.partial {
+  background: linear-gradient(to right, var(--accent) var(--fill, 0%), transparent var(--fill, 0%));
+}

@@ -13,12 +13,128 @@ export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g
 //   f = fraction (a/b), d = decimal, p = percent
 export type ConvOp = "conv-fd" | "conv-fp" | "conv-df" | "conv-dp" | "conv-pf" | "conv-pd";
 
+export type EqOp = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4";
+
 export interface Pair {
   a: number;
   b: number;
-  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp = geometry/conversions
-  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp;
-  c?: number; // third side for triangle perimeter
+  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp/EqOp = others
+  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp;
+  c?: number;       // triangle perimeter third side, OR abs value second solution
+  answer?: number;  // equation answer (x value, or first/larger solution for abs value)
+  eqStr?: string;   // display string e.g. "3x + 5 = 14"
+}
+
+export function isEq(pair: Partial<Pair>): boolean {
+  return typeof pair.op === "string" && pair.op.startsWith("eq-");
+}
+
+// Returns which level to serve based on cumulative points (50 pts per level, 200 total)
+export function eqLevel(points: number): 1 | 2 | 3 | 4 | "review" {
+  if (points >= 200) return "review";
+  if (points >= 150) return 4;
+  if (points >= 100) return 3;
+  if (points >= 50)  return 2;
+  return 1;
+}
+
+// Sign helpers for equation string building
+function addC(n: number): string { return n >= 0 ? ` + ${n}` : ` − ${Math.abs(n)}`; }
+
+export function buildEquationQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
+  if (level === "review") {
+    return shuffle([
+      ...buildEquationQueue(1).slice(0, 15),
+      ...buildEquationQueue(2).slice(0, 15),
+      ...buildEquationQueue(3).slice(0, 15),
+      ...buildEquationQueue(4).slice(0, 15),
+    ]);
+  }
+
+  const pairs: Pair[] = [];
+
+  if (level === 1) {
+    for (let x = -10; x <= 15; x++) {
+      if (x === 0) continue;
+      for (let a = 1; a <= 12; a++) {
+        pairs.push({ a, b: 0, op: "eq-l1", answer: x, eqStr: `x + ${a} = ${x + a}` });
+        pairs.push({ a, b: 0, op: "eq-l1", answer: x, eqStr: `x − ${a} = ${x - a}` });
+      }
+    }
+    for (let a = 2; a <= 10; a++) {
+      for (let x = -10; x <= 10; x++) {
+        if (x === 0) continue;
+        pairs.push({ a, b: a * x, op: "eq-l1", answer: x, eqStr: `${a}x = ${a * x}` });
+      }
+    }
+    for (let a = 2; a <= 8; a++) {
+      for (let b = -8; b <= 8; b++) {
+        if (b === 0) continue;
+        pairs.push({ a, b, op: "eq-l1", answer: a * b, eqStr: `x ÷ ${a} = ${b}` });
+      }
+    }
+  }
+
+  if (level === 2) {
+    const consts = [-12, -9, -6, -3, 3, 6, 9, 12];
+    for (let a = 2; a <= 7; a++) {
+      for (let x = -6; x <= 10; x++) {
+        if (x === 0) continue;
+        for (const b of consts) {
+          pairs.push({ a, b, op: "eq-l2", answer: x, eqStr: `${a}x${addC(b)} = ${a * x + b}` });
+        }
+      }
+    }
+    // like terms: ax + bx = c
+    for (let a = 2; a <= 7; a++) {
+      for (let b = 1; b <= 4; b++) {
+        for (let x = 1; x <= 12; x++) {
+          pairs.push({ a, b, op: "eq-l2", answer: x, eqStr: `${a}x + ${b}x = ${(a + b) * x}` });
+        }
+      }
+    }
+  }
+
+  if (level === 3) {
+    // ax + b = cx + d  (a > c, integer solution x > 0)
+    const consts = [-12, -9, -6, -3, 3, 6, 9, 12];
+    for (let a = 3; a <= 8; a++) {
+      for (let c = 1; c <= 3; c++) {
+        if (c >= a) continue;
+        for (let x = 1; x <= 12; x++) {
+          for (const b of consts) {
+            const d = (a - c) * x + b;
+            pairs.push({ a, b, op: "eq-l3", answer: x, eqStr: `${a}x${addC(b)} = ${c}x${addC(d)}` });
+          }
+        }
+      }
+    }
+  }
+
+  if (level === 4) {
+    // |x + a| = b  →  x = b−a  or  x = −b−a
+    for (let a = 1; a <= 12; a++) {
+      for (let b = 2; b <= 12; b++) {
+        const s1 = b - a, s2 = -b - a;
+        pairs.push({ a, b, op: "eq-l4", answer: Math.max(s1, s2), c: Math.min(s1, s2), eqStr: `|x + ${a}| = ${b}` });
+      }
+    }
+    // |x − a| = b  →  x = a+b  or  x = a−b
+    for (let a = 1; a <= 12; a++) {
+      for (let b = 2; b <= 12; b++) {
+        const s1 = a + b, s2 = a - b;
+        pairs.push({ a, b, op: "eq-l4", answer: Math.max(s1, s2), c: Math.min(s1, s2), eqStr: `|x − ${a}| = ${b}` });
+      }
+    }
+    // |ax| = b  →  x = b/a  or  x = −b/a
+    for (let a = 2; a <= 8; a++) {
+      for (let k = 1; k <= 8; k++) {
+        pairs.push({ a, b: a * k, op: "eq-l4", answer: k, c: -k, eqStr: `|${a}x| = ${a * k}` });
+      }
+    }
+  }
+
+  return shuffle(pairs).slice(0, 60);
 }
 
 export function isConv(pair: Pair): boolean {

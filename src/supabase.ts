@@ -226,6 +226,19 @@ export async function fetchAllSessions(): Promise<TeacherSession[]> {
   return data ?? [];
 }
 
+// ─── Equation progress ────────────────────────────────────────────────────────
+
+export async function fetchEqPoints(student_name: string): Promise<number> {
+  const { data } = await supabase.from("eq_progress")
+    .select("points").eq("student_name", student_name).maybeSingle();
+  return data?.points ?? 0;
+}
+
+export async function upsertEqPoints(student_name: string, newPoints: number): Promise<void> {
+  await supabase.from("eq_progress")
+    .upsert({ student_name, points: newPoints }, { onConflict: "student_name" });
+}
+
 const MASTERY_THRESHOLD = 5;
 
 export async function updateFactProgress(
