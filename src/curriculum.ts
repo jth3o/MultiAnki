@@ -13,7 +13,7 @@ export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g
 //   f = fraction (a/b), d = decimal, p = percent
 export type ConvOp = "conv-fd" | "conv-fp" | "conv-df" | "conv-dp" | "conv-pf" | "conv-pd";
 
-export type EqOp = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5";
+export type EqOp = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6";
 
 export interface Pair {
   a: number;
@@ -29,9 +29,10 @@ export function isEq(pair: Partial<Pair>): boolean {
   return typeof pair.op === "string" && pair.op.startsWith("eq-");
 }
 
-// Returns which level to serve based on cumulative points (3 pts per level, 15 total)
-export function eqLevel(points: number): 1 | 2 | 3 | 4 | 5 | "review" {
-  if (points >= 15) return "review";
+// Returns which level to serve based on cumulative points (3 pts per level, 18 total)
+export function eqLevel(points: number): 1 | 2 | 3 | 4 | 5 | 6 | "review" {
+  if (points >= 18) return "review";
+  if (points >= 15) return 6;
   if (points >= 12) return 5;
   if (points >= 9)  return 4;
   if (points >= 6)  return 3;
@@ -39,27 +40,42 @@ export function eqLevel(points: number): 1 | 2 | 3 | 4 | 5 | "review" {
   return 1;
 }
 
-export const EQ_LEVEL_NAMES: Record<1|2|3|4|5|"review", string> = {
+export const EQ_LEVEL_NAMES: Record<1|2|3|4|5|6|"review", string> = {
   1: "Simple",
   2: "Multi-Step",
   3: "Both Sides",
   4: "Absolute Value",
   5: "Mixed Variables",
+  6: "Formula: y = mx + b",
   review: "Review",
 };
 
 // Sign helpers for equation string building
 function addC(n: number): string { return n >= 0 ? ` + ${n}` : ` − ${Math.abs(n)}`; }
 
-export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[] {
+export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pair[] {
   if (level === "review") {
     return shuffle([
-      ...buildEquationQueue(1).slice(0, 12),
-      ...buildEquationQueue(2).slice(0, 12),
-      ...buildEquationQueue(3).slice(0, 12),
-      ...buildEquationQueue(4).slice(0, 12),
-      ...buildEquationQueue(5).slice(0, 12),
+      ...buildEquationQueue(1).slice(0, 10),
+      ...buildEquationQueue(2).slice(0, 10),
+      ...buildEquationQueue(3).slice(0, 10),
+      ...buildEquationQueue(4).slice(0, 10),
+      ...buildEquationQueue(5).slice(0, 10),
+      ...buildEquationQueue(6).slice(0, 10),
     ]);
+  }
+
+  if (level === 6) {
+    const pairs: Pair[] = [];
+    for (let m = 1; m <= 9; m++) {
+      for (let x = 1; x <= 10; x++) {
+        for (const b of [-8, -6, -4, -3, -2, -1, 1, 2, 3, 4, 6, 8]) {
+          const y = m * x + b;
+          pairs.push({ a: m, b: x, op: "eq-l6", answer: b, c: y, eqStr: `${y} = ${m}(${x}) + b` });
+        }
+      }
+    }
+    return shuffle(pairs).slice(0, 60);
   }
 
   if (level === 5) {

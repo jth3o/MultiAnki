@@ -253,7 +253,7 @@ export default function App() {
       upsertPairWeights(student, "add", newWeights);
     } else if (op === "eq") {
       const delta = corrects.length;
-      const newPts = Math.min(15, eqPointsRef.current + delta);
+      const newPts = Math.min(18, eqPointsRef.current + delta);
       upsertEqPoints(student, newPts);
       setEqPoints(newPts);
     } else {
@@ -1076,10 +1076,11 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
             <p className="problem">{question}</p>
           )}
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "center" }}>
+            {pair.op === "eq-l6" && <span className="conv-percent-label">b =</span>}
             <input ref={inputRef} className="answer-input"
               type={(geo || conv || eq) ? "text" : "number"} inputMode={geo && isCircle ? "text" : "numeric"}
               value={input} onChange={(e) => onInput(e.target.value)} onKeyDown={onKeyDown}
-              placeholder={isCircle ? "e.g. 25π" : convQ?.isFraction ? "e.g. 3/4" : eq ? (pair.op === "eq-l4" ? "e.g. 5, −3" : "x = ?") : "your answer"}
+              placeholder={isCircle ? "e.g. 25π" : convQ?.isFraction ? "e.g. 3/4" : eq ? (pair.op === "eq-l4" ? "e.g. 5, −3" : "") : "your answer"}
               style={{ flex: 1 }} />
             {isCircle && (
               <button className="btn-pi" onClick={appendPi} type="button">π</button>
@@ -1097,7 +1098,9 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
             {eq ? (
               <div className="conv-question">
                 <p className="conv-given">{pair.eqStr}</p>
-                <p className="conv-given">x = <strong>{feedback.answerText ?? feedback.answer}</strong></p>
+                <p className="conv-given">
+                  {pair.op === "eq-l6" ? "b" : "x"} = <strong>{feedback.answerText ?? feedback.answer}</strong>
+                </p>
               </div>
             ) : conv && convQ ? (
               <div className="conv-question">
