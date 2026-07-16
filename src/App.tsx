@@ -808,46 +808,10 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
   );
 }
 
-// ─── Equation progress ────────────────────────────────────────────────────────
-
-const LEVEL_NAMES = ["Simple", "Multi-Step", "Both Sides", "Absolute Value"];
-
-function EqProgress({ points }: { points: number }) {
-  const squaresPerLevel = 5, pointsPerSquare = 10;
-  return (
-    <div className="eq-progress">
-      {LEVEL_NAMES.map((name, lvl) => {
-        const levelStart = lvl * 50;
-        const levelPoints = Math.max(0, Math.min(50, points - levelStart));
-        const filledFull = Math.floor(levelPoints / pointsPerSquare);
-        const partial = (levelPoints % pointsPerSquare) / pointsPerSquare;
-        return (
-          <div key={lvl} className="eq-level-row">
-            <span className="eq-level-name">{name}</span>
-            <div className="eq-squares">
-              {Array.from({ length: squaresPerLevel }, (_, i) => {
-                const filled = i < filledFull;
-                const isPartial = i === filledFull && partial > 0 && levelPoints < 50;
-                return (
-                  <div key={i}
-                    className={`eq-sq ${filled ? "filled" : isPartial ? "partial" : "empty"}`}
-                    style={isPartial ? { "--fill": `${partial * 100}%` } as React.CSSProperties : {}}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Lobby ────────────────────────────────────────────────────────────────────
 
-function LobbyView({ initialDone, eqPoints, onReview, onInitialTest }: {
+function LobbyView({ initialDone, onReview, onInitialTest }: {
   initialDone: boolean;
-  eqPoints: number;
   onReview: (op: "mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq") => void;
   onInitialTest: () => void;
 }) {
@@ -891,7 +855,6 @@ function LobbyView({ initialDone, eqPoints, onReview, onInitialTest }: {
 
       <div className="op-section">
         <p className="lobby-heading">Solving Equations</p>
-        <EqProgress points={eqPoints} />
         <button className="btn-op btn-practice" onClick={() => onReview("eq")}>
           {eqPoints >= 200 ? "Review" : "Practice"}
         </button>
