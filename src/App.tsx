@@ -1011,6 +1011,10 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
   const eq      = isEq(pair);
   const geo     = isGeo(pair);
   const conv    = isConv(pair);
+  const eqL6Parts = pair.op === "eq-l6" && pair.eqStr ? pair.eqStr.split("|") : null;
+  const l6SolveVar = eqL6Parts?.[0] ?? "?";
+  const l6Formula  = eqL6Parts?.[1] ?? "";
+  const l6Given    = eqL6Parts?.[2] ?? "";
   const isCircle = pair.op === "g-ca-r" || pair.op === "g-ca-d" || pair.op === "g-cc-r" || pair.op === "g-cc-d";
   const convQ   = conv ? convAnswer(pair) : null;
   const convHint = (op: ConvOp) => {
@@ -1058,7 +1062,14 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
         <>
           {eq ? (
             <div className="conv-question">
-              <p className="conv-given">{pair.eqStr}</p>
+              {pair.op === "eq-l6" ? (
+                <>
+                  <p className="conv-given">{l6Formula}</p>
+                  <p className="conv-hint">{l6Given}</p>
+                </>
+              ) : (
+                <p className="conv-given">{pair.eqStr}</p>
+              )}
               {pair.op === "eq-l4" && <p className="conv-hint">Enter both solutions separated by a comma (e.g. 5, −3)</p>}
             </div>
           ) : conv && convQ ? (
@@ -1076,7 +1087,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
             <p className="problem">{question}</p>
           )}
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "center" }}>
-            {pair.op === "eq-l6" && <span className="conv-percent-label">b =</span>}
+            {pair.op === "eq-l6" && <span className="conv-percent-label">{l6SolveVar} =</span>}
             <input ref={inputRef} className="answer-input"
               type={(geo || conv || eq) ? "text" : "number"} inputMode={geo && isCircle ? "text" : "numeric"}
               value={input} onChange={(e) => onInput(e.target.value)} onKeyDown={onKeyDown}
@@ -1097,9 +1108,16 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
           <AutoAdvance correct={feedback.correct} onNext={onNext}>
             {eq ? (
               <div className="conv-question">
-                <p className="conv-given">{pair.eqStr}</p>
+                {pair.op === "eq-l6" ? (
+                  <>
+                    <p className="conv-given">{l6Formula}</p>
+                    <p className="conv-hint">{l6Given}</p>
+                  </>
+                ) : (
+                  <p className="conv-given">{pair.eqStr}</p>
+                )}
                 <p className="conv-given">
-                  {pair.op === "eq-l6" ? "b" : "x"} = <strong>{feedback.answerText ?? feedback.answer}</strong>
+                  {pair.op === "eq-l6" ? l6SolveVar : pair.op === "eq-l4" ? "solutions" : "x"} = <strong>{feedback.answerText ?? feedback.answer}</strong>
                 </p>
               </div>
             ) : conv && convQ ? (

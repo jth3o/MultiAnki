@@ -67,14 +67,61 @@ export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pai
 
   if (level === 6) {
     const pairs: Pair[] = [];
-    for (let m = 1; m <= 9; m++) {
-      for (let x = 1; x <= 10; x++) {
-        for (const b of [-8, -6, -4, -3, -2, -1, 1, 2, 3, 4, 6, 8]) {
-          const y = m * x + b;
-          pairs.push({ a: m, b: x, op: "eq-l6", answer: b, c: y, eqStr: `${y} = ${m}(${x}) + b` });
+    const add = (solveVar: string, formula: string, given: string, answer: number) =>
+      pairs.push({ a: 0, b: 0, op: "eq-l6", answer, eqStr: `${solveVar}|${formula}|${given}` });
+
+    // y = mx + b
+    for (let m = 2; m <= 7; m++)
+      for (let x = 1; x <= 8; x++)
+        for (const b of [-6, -4, -3, -2, 2, 3, 4, 6]) {
+          add("b", "y = mx + b", `y = ${m*x+b}, m = ${m}, x = ${x}`, b);
+          add("m", "y = mx + b", `y = ${m*x+b}, x = ${x}, b = ${b}`, m);
+          add("x", "y = mx + b", `y = ${m*x+b}, m = ${m}, b = ${b}`, x);
         }
+
+    // d = rt
+    for (let r = 2; r <= 10; r++)
+      for (let t = 2; t <= 12; t++) {
+        add("t", "d = rt", `d = ${r*t}, r = ${r}`, t);
+        add("r", "d = rt", `d = ${r*t}, t = ${t}`, r);
       }
-    }
+
+    // A = lw
+    for (let l = 2; l <= 12; l++)
+      for (let w = 2; w <= 12; w++) {
+        add("w", "A = lw", `A = ${l*w}, l = ${l}`, w);
+        add("l", "A = lw", `A = ${l*w}, w = ${w}`, l);
+      }
+
+    // P = 2l + 2w
+    for (let l = 2; l <= 12; l++)
+      for (let w = 2; w <= 12; w++) {
+        add("l", "P = 2l + 2w", `P = ${2*l+2*w}, w = ${w}`, l);
+        add("w", "P = 2l + 2w", `P = ${2*l+2*w}, l = ${l}`, w);
+      }
+
+    // F = ma
+    for (let m = 2; m <= 10; m++)
+      for (let a = 2; a <= 10; a++) {
+        add("a", "F = ma", `F = ${m*a}, m = ${m}`, a);
+        add("m", "F = ma", `F = ${m*a}, a = ${a}`, m);
+      }
+
+    // A = ½bh  (b even so A is integer)
+    for (let b = 2; b <= 12; b += 2)
+      for (let h = 2; h <= 12; h++) {
+        add("h", "A = ½bh", `A = ${b*h/2}, b = ${b}`, h);
+        add("b", "A = ½bh", `A = ${b*h/2}, h = ${h}`, b);
+      }
+
+    // V = lwh
+    for (let l = 2; l <= 6; l++)
+      for (let w = 2; w <= 6; w++)
+        for (let h = 2; h <= 6; h++) {
+          add("h", "V = lwh", `V = ${l*w*h}, l = ${l}, w = ${w}`, h);
+          add("l", "V = lwh", `V = ${l*w*h}, w = ${w}, h = ${h}`, l);
+        }
+
     return shuffle(pairs).slice(0, 60);
   }
 
