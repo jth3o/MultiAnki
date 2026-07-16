@@ -492,7 +492,13 @@ export default function App() {
     let answerText: string | undefined;
 
     if (isEq(pair)) {
-      if (pair.op === "eq-l4") {
+      if (pair.op === "eq-l6") {
+        const parts = pair.eqStr?.split("|") ?? [];
+        const accepted = parts.slice(3).map(s => s.replace(/\s/g, "").toLowerCase());
+        const normalized = pracInput.trim().replace(/\s/g, "").toLowerCase();
+        correct = accepted.includes(normalized);
+        answerText = parts[2] ?? "";
+      } else if (pair.op === "eq-l4") {
         // Two solutions: accept "a, b" in any order
         const parts = pracInput.trim().split(",").map(s => parseInt(s.trim(), 10));
         const sorted = [...parts].sort((a, b) => b - a);
@@ -567,7 +573,8 @@ export default function App() {
     logFact({ student_name: studentName ?? "", lesson: lessonLabel2, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: null });
     if (!isGeo(pair) && !isConv(pair) && !isEq(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, false);
     if (isEq(pair)) {
-      const ansText = pair.op === "eq-l4" ? `${pair.answer}, ${pair.c}` : undefined;
+      const ansText = pair.op === "eq-l6" ? (pair.eqStr?.split("|")[2] ?? "")
+        : pair.op === "eq-l4" ? `${pair.answer}, ${pair.c}` : undefined;
       setPracFeedback({ correct: false, answer: pair.answer ?? 0, answerText: ansText });
     } else if (isConv(pair)) {
       const ca = convAnswer(pair);
@@ -1014,7 +1021,6 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
   const eqL6Parts = pair.op === "eq-l6" && pair.eqStr ? pair.eqStr.split("|") : null;
   const l6SolveVar = eqL6Parts?.[0] ?? "?";
   const l6Formula  = eqL6Parts?.[1] ?? "";
-  const l6Given    = eqL6Parts?.[2] ?? "";
   const isCircle = pair.op === "g-ca-r" || pair.op === "g-ca-d" || pair.op === "g-cc-r" || pair.op === "g-cc-d";
   const convQ   = conv ? convAnswer(pair) : null;
   const convHint = (op: ConvOp) => {
@@ -1065,7 +1071,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
               {pair.op === "eq-l6" ? (
                 <>
                   <p className="conv-given">{l6Formula}</p>
-                  <p className="conv-hint">{l6Given}</p>
+                  <p className="conv-hint">Solve for {l6SolveVar}</p>
                 </>
               ) : (
                 <p className="conv-given">{pair.eqStr}</p>
@@ -1109,10 +1115,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
             {eq ? (
               <div className="conv-question">
                 {pair.op === "eq-l6" ? (
-                  <>
-                    <p className="conv-given">{l6Formula}</p>
-                    <p className="conv-hint">{l6Given}</p>
-                  </>
+                  <p className="conv-given">{l6Formula}</p>
                 ) : (
                   <p className="conv-given">{pair.eqStr}</p>
                 )}
