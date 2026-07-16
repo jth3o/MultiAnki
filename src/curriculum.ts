@@ -29,13 +29,13 @@ export function isEq(pair: Partial<Pair>): boolean {
   return typeof pair.op === "string" && pair.op.startsWith("eq-");
 }
 
-// Returns which level to serve based on cumulative points (50 pts per level, 250 total)
+// Returns which level to serve based on cumulative points (40 pts per level, 200 total)
 export function eqLevel(points: number): 1 | 2 | 3 | 4 | 5 | "review" {
-  if (points >= 250) return "review";
-  if (points >= 200) return 5;
-  if (points >= 150) return 4;
-  if (points >= 100) return 3;
-  if (points >= 50)  return 2;
+  if (points >= 200) return "review";
+  if (points >= 160) return 5;
+  if (points >= 120) return 4;
+  if (points >= 80)  return 3;
+  if (points >= 40)  return 2;
   return 1;
 }
 

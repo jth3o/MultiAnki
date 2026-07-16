@@ -253,7 +253,7 @@ export default function App() {
       upsertPairWeights(student, "add", newWeights);
     } else if (op === "eq") {
       const delta = corrects.length - mistakes.length * 0.2;
-      const newPts = Math.min(250, Math.max(0, eqPointsRef.current + delta));
+      const newPts = Math.min(200, Math.max(0, eqPointsRef.current + delta));
       upsertEqPoints(student, newPts);
       setEqPoints(newPts);
     } else {
