@@ -13,7 +13,7 @@ export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g
 //   f = fraction (a/b), d = decimal, p = percent
 export type ConvOp = "conv-fd" | "conv-fp" | "conv-df" | "conv-dp" | "conv-pf" | "conv-pd";
 
-export type EqOp = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4";
+export type EqOp = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5";
 
 export interface Pair {
   a: number;
@@ -29,26 +29,51 @@ export function isEq(pair: Partial<Pair>): boolean {
   return typeof pair.op === "string" && pair.op.startsWith("eq-");
 }
 
-// Returns which level to serve based on cumulative points (50 pts per level, 200 total)
-export function eqLevel(points: number): 1 | 2 | 3 | 4 | "review" {
-  if (points >= 200) return "review";
+// Returns which level to serve based on cumulative points (50 pts per level, 250 total)
+export function eqLevel(points: number): 1 | 2 | 3 | 4 | 5 | "review" {
+  if (points >= 250) return "review";
+  if (points >= 200) return 5;
   if (points >= 150) return 4;
   if (points >= 100) return 3;
   if (points >= 50)  return 2;
   return 1;
 }
 
+export const EQ_LEVEL_NAMES: Record<1|2|3|4|5|"review", string> = {
+  1: "Simple",
+  2: "Multi-Step",
+  3: "Both Sides",
+  4: "Absolute Value",
+  5: "Mixed Variables",
+  review: "Review",
+};
+
 // Sign helpers for equation string building
 function addC(n: number): string { return n >= 0 ? ` + ${n}` : ` − ${Math.abs(n)}`; }
 
-export function buildEquationQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
+export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[] {
   if (level === "review") {
     return shuffle([
-      ...buildEquationQueue(1).slice(0, 15),
-      ...buildEquationQueue(2).slice(0, 15),
-      ...buildEquationQueue(3).slice(0, 15),
-      ...buildEquationQueue(4).slice(0, 15),
+      ...buildEquationQueue(1).slice(0, 12),
+      ...buildEquationQueue(2).slice(0, 12),
+      ...buildEquationQueue(3).slice(0, 12),
+      ...buildEquationQueue(4).slice(0, 12),
+      ...buildEquationQueue(5).slice(0, 12),
     ]);
+  }
+
+  if (level === 5) {
+    const altVars = ["y", "n", "m", "p", "t", "k"];
+    const rv = () => altVars[Math.floor(Math.random() * altVars.length)];
+    const pool = [
+      ...buildEquationQueue(1).slice(0, 20),
+      ...buildEquationQueue(2).slice(0, 20),
+      ...buildEquationQueue(3).slice(0, 20),
+    ];
+    return shuffle(pool.map(p => {
+      const v = rv();
+      return { ...p, op: "eq-l5" as const, eqStr: p.eqStr?.replace(/x/g, v) };
+    }));
   }
 
   const pairs: Pair[] = [];

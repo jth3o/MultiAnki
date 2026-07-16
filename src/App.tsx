@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   DURATIONS, buildInitialQueue, buildDivisionQueue, buildSquaresAndRootsQueue, buildGeoQueue,
   buildAdditionQueue, buildConversionQueue, buildEquationQueue, buildThreeMinQueue, shuffle,
-  isGeo, geoAnswer, isConv, convAnswer, isEq, eqLevel,
+  isGeo, geoAnswer, isConv, convAnswer, isEq, eqLevel, EQ_LEVEL_NAMES,
   type Pair, type SessionMode, type FactStat, type ConvOp,
 } from "./curriculum";
 import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, fetchEqPoints, upsertEqPoints, type PairWeight } from "./supabase";
@@ -151,6 +151,7 @@ export default function App() {
   const activeModeRef       = useRef<SessionMode>("practice");
   const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq">("mult");
   const eqPointsRef         = useRef<number>(0);
+  const activeEqLevelRef    = useRef<string>("");
   const sessionExpiredRef   = useRef(false);
   const sessionCorrectRef  = useRef(0);
   const sessionTotalRef    = useRef(0);
@@ -252,7 +253,7 @@ export default function App() {
       upsertPairWeights(student, "add", newWeights);
     } else if (op === "eq") {
       const delta = corrects.length - mistakes.length * 0.2;
-      const newPts = Math.min(200, Math.max(0, eqPointsRef.current + delta));
+      const newPts = Math.min(250, Math.max(0, eqPointsRef.current + delta));
       upsertEqPoints(student, newPts);
       setEqPoints(newPts);
     } else {
@@ -409,6 +410,7 @@ export default function App() {
       q = shuffle(weighted).sort((a, b) => convScoreFor(b) - convScoreFor(a));
     } else if (op === "eq") {
       const level = eqLevel(eqPoints);
+      activeEqLevelRef.current = EQ_LEVEL_NAMES[level];
       q = buildEquationQueue(level);
     } else if (op === "add") {
       const wMap = new Map<string, PairWeight>();
@@ -720,7 +722,7 @@ export default function App() {
             : activeOpRef.current === "geo"  ? "Geometry"
             : activeOpRef.current === "conv" ? "Conversions"
             : activeOpRef.current === "add"  ? "Addition"
-            : activeOpRef.current === "eq"   ? "Solving Equations"
+            : activeOpRef.current === "eq"   ? `Solving Equations · ${activeEqLevelRef.current}`
             : activeOpRef.current === "div"  ? "Division" : "Multiplication"}
           tag=""
           secondsLeft={secondsLeft}
