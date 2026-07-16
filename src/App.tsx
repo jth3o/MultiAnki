@@ -252,8 +252,8 @@ export default function App() {
       setProgress((prev) => ({ ...prev, add: newWeights }));
       upsertPairWeights(student, "add", newWeights);
     } else if (op === "eq") {
-      const delta = corrects.length - mistakes.length * 0.2;
-      const newPts = Math.min(200, Math.max(0, eqPointsRef.current + delta));
+      const delta = corrects.length;
+      const newPts = Math.min(15, eqPointsRef.current + delta);
       upsertEqPoints(student, newPts);
       setEqPoints(newPts);
     } else {
