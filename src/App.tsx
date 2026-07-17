@@ -252,10 +252,7 @@ export default function App() {
       setProgress((prev) => ({ ...prev, add: newWeights }));
       upsertPairWeights(student, "add", newWeights);
     } else if (op === "eq") {
-      const delta = corrects.length;
-      const newPts = Math.min(18, eqPointsRef.current + delta);
-      upsertEqPoints(student, newPts);
-      setEqPoints(newPts);
+      // points already saved incrementally in pracSubmit
     } else {
       const current = op === "div" ? progressRef.current.div : progressRef.current.mult;
       const newWeights = mergeWeights(current, mistakes, corrects, slows, op);
@@ -542,6 +539,12 @@ export default function App() {
     if (correct) {
       setSessionCorrects((c) => [...c, pair]);
       if (elapsed > SLOW_THRESHOLD_SECS) setSessionSlows((s) => [...s, pair]);
+      if (isEq(pair)) {
+        const newPts = Math.min(18, eqPointsRef.current + 1);
+        eqPointsRef.current = newPts;
+        setEqPoints(newPts);
+        upsertEqPoints(studentName ?? "", newPts);
+      }
     } else {
       setSessionMistakes((m) => [...m, pair]);
     }

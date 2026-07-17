@@ -206,7 +206,7 @@ export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pai
     }
   }
 
-  return shuffle(pairs).slice(0, 60);
+  return shuffle(pairs).slice(0, 15);
 }
 
 export function isConv(pair: Pair): boolean {
