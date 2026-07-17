@@ -152,6 +152,7 @@ export default function App() {
   const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq">("mult");
   const eqPointsRef         = useRef<number>(0);
   const activeEqLevelRef    = useRef<string>("");
+  const pendingEqQueueRef   = useRef<Pair[] | null>(null);
   const sessionExpiredRef   = useRef(false);
   const sessionCorrectRef  = useRef(0);
   const sessionTotalRef    = useRef(0);
@@ -169,7 +170,7 @@ export default function App() {
   useEffect(() => { progressRef.current = progress; },                 [progress]);
   useEffect(() => { eqPointsRef.current = eqPoints; }, [eqPoints]);
 
-  // Swap eq queue mid-session when level advances
+  // Stage a new eq queue when level advances — pracNext will apply it after feedback is shown
   useEffect(() => {
     if (activeOpRef.current !== "eq") return;
     if (phaseRef.current !== "review" && phaseRef.current !== "practice") return;
@@ -177,10 +178,7 @@ export default function App() {
     const newLevelName = EQ_LEVEL_NAMES[newLevel];
     if (newLevelName !== activeEqLevelRef.current) {
       activeEqLevelRef.current = newLevelName;
-      setQueue(buildEquationQueue(newLevel));
-      setPracPhase("question");
-      setPracInput("");
-      setPracFeedback(null);
+      pendingEqQueueRef.current = buildEquationQueue(newLevel);
     }
   }, [eqPoints]);
 
@@ -617,6 +615,12 @@ export default function App() {
       newQueue = [...queue.slice(1), pair];
     } else {
       newQueue = queue.slice(1);
+    }
+
+    // If a level change was staged, use that queue instead
+    if (pendingEqQueueRef.current !== null) {
+      newQueue = pendingEqQueueRef.current;
+      pendingEqQueueRef.current = null;
     }
 
     if (newQueue.length === 0 || sessionExpiredRef.current) {
@@ -1138,7 +1142,10 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
                   <p className="conv-given">{pair.eqStr}</p>
                 )}
                 <p className="conv-given">
-                  {pair.op === "eq-l6" ? l6SolveVar : pair.op === "eq-l4" ? "solutions" : "x"} = <strong>{feedback.answerText ?? feedback.answer}</strong>
+                  {pair.op === "eq-l6" ? l6SolveVar
+                    : pair.op === "eq-l4" ? "solutions"
+                    : pair.op === "eq-l5" ? (pair.eqStr?.match(/[ynmptk]/)?.[0] ?? "x")
+                    : "x"} = <strong>{feedback.answerText ?? feedback.answer}</strong>
                 </p>
               </div>
             ) : conv && convQ ? (
