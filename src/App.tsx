@@ -623,6 +623,11 @@ export default function App() {
       pendingEqQueueRef.current = null;
     }
 
+    // Eq review: refill queue when exhausted until timer expires
+    if (newQueue.length === 0 && activeOpRef.current === "eq" && eqLevel(eqPointsRef.current) === "review" && !sessionExpiredRef.current) {
+      newQueue = buildEquationQueue("review");
+    }
+
     if (newQueue.length === 0 || sessionExpiredRef.current) {
       endSession();
     } else {
