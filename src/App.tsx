@@ -167,7 +167,22 @@ export default function App() {
   useEffect(() => { studentNameRef.current = studentName; },           [studentName]);
   useEffect(() => { phaseRef.current = phase; },                       [phase]);
   useEffect(() => { progressRef.current = progress; },                 [progress]);
-  useEffect(() => { eqPointsRef.current = eqPoints; },                [eqPoints]);
+  useEffect(() => { eqPointsRef.current = eqPoints; }, [eqPoints]);
+
+  // Swap eq queue mid-session when level advances
+  useEffect(() => {
+    if (activeOpRef.current !== "eq") return;
+    if (phaseRef.current !== "review" && phaseRef.current !== "practice") return;
+    const newLevel = eqLevel(eqPoints);
+    const newLevelName = EQ_LEVEL_NAMES[newLevel];
+    if (newLevelName !== activeEqLevelRef.current) {
+      activeEqLevelRef.current = newLevelName;
+      setQueue(buildEquationQueue(newLevel));
+      setPracPhase("question");
+      setPracInput("");
+      setPracFeedback(null);
+    }
+  }, [eqPoints]);
 
   // When the student name is already remembered, fetch their data from Supabase on mount.
   useEffect(() => {
@@ -607,14 +622,6 @@ export default function App() {
     if (newQueue.length === 0 || sessionExpiredRef.current) {
       endSession();
     } else {
-      // If eq level advanced mid-session, swap to new level's questions
-      if (activeOpRef.current === "eq") {
-        const newLevel = eqLevel(eqPointsRef.current);
-        if (EQ_LEVEL_NAMES[newLevel] !== activeEqLevelRef.current) {
-          activeEqLevelRef.current = EQ_LEVEL_NAMES[newLevel];
-          newQueue = buildEquationQueue(newLevel);
-        }
-      }
       setQueue(newQueue);
       setQuestionSigns(newQueue[0]?.op === "sq" || newQueue[0]?.op === "sqrt" || isGeo(newQueue[0] ?? {}) || isConv(newQueue[0] ?? {}) || isEq(newQueue[0] ?? {}) || newQueue[0]?.op === "add" ? { negA: false, negB: false } : randomSigns());
       setPracPhase("question");
