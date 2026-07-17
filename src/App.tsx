@@ -607,6 +607,14 @@ export default function App() {
     if (newQueue.length === 0 || sessionExpiredRef.current) {
       endSession();
     } else {
+      // If eq level advanced mid-session, swap to new level's questions
+      if (activeOpRef.current === "eq") {
+        const newLevel = eqLevel(eqPointsRef.current);
+        if (EQ_LEVEL_NAMES[newLevel] !== activeEqLevelRef.current) {
+          activeEqLevelRef.current = EQ_LEVEL_NAMES[newLevel];
+          newQueue = buildEquationQueue(newLevel);
+        }
+      }
       setQueue(newQueue);
       setQuestionSigns(newQueue[0]?.op === "sq" || newQueue[0]?.op === "sqrt" || isGeo(newQueue[0] ?? {}) || isConv(newQueue[0] ?? {}) || isEq(newQueue[0] ?? {}) || newQueue[0]?.op === "add" ? { negA: false, negB: false } : randomSigns());
       setPracPhase("question");
