@@ -125,7 +125,7 @@ function buildFractionEqQueue(): Pair[] {
     }
   }
 
-  return shuffle(pairs);
+  return shuffle(pairs.map(p => ({ ...p, eqStr: p.eqStr?.replace(/x/g, "X") })));
 }
 
 export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pair[] {
@@ -186,7 +186,7 @@ export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pai
   }
 
   if (level === 5) {
-    const altVars = ["y", "n", "m", "p", "t", "k"];
+    const altVars = ["Y", "N", "M", "P", "T", "K"];
     const rv = () => altVars[Math.floor(Math.random() * altVars.length)];
     const pool = [
       ...buildEquationQueue(1).slice(0, 20),
@@ -195,7 +195,7 @@ export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pai
     ];
     return shuffle(pool.map(p => {
       const v = rv();
-      return { ...p, op: "eq-l5" as const, eqStr: p.eqStr?.replace(/x/g, v) };
+      return { ...p, op: "eq-l5" as const, eqStr: p.eqStr?.replace(/X/g, v) };
     }));
   }
 
@@ -282,7 +282,7 @@ export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pai
     }
   }
 
-  return shuffle(pairs).slice(0, 15);
+  return shuffle(pairs.map(p => ({ ...p, eqStr: p.eqStr?.replace(/x/g, "X") }))).slice(0, 15);
 }
 
 export function isConv(pair: Pair): boolean {

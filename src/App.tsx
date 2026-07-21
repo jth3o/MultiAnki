@@ -539,7 +539,8 @@ export default function App() {
         answerText = `${pair.answer}, ${pair.c}`;
       } else {
         expectedNum = pair.answer ?? 0;
-        correct = parseInt(pracInput.trim(), 10) === expectedNum;
+        const rawInput = pracInput.trim().replace(/^[a-zA-Z]\s*=\s*/, "");
+        correct = parseInt(rawInput, 10) === expectedNum;
       }
     } else if (isConv(pair)) {
       const ca = convAnswer(pair);
@@ -1224,8 +1225,8 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
                 <p className="conv-given">
                   {pair.op === "eq-l6" ? l6SolveVar
                     : pair.op === "eq-l4" ? "solutions"
-                    : pair.op === "eq-l5" ? (pair.eqStr?.match(/[ynmptk]/)?.[0] ?? "x")
-                    : "x"} = <strong>{feedback.answerText ?? feedback.answer}</strong>
+                    : pair.op === "eq-l5" ? (pair.eqStr?.match(/[YNMPTK]/)?.[0] ?? "X")
+                    : "X"} = <strong>{feedback.answerText ?? feedback.answer}</strong>
                 </p>
               </div>
             ) : conv && convQ ? (
