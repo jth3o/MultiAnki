@@ -961,7 +961,7 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
 function LobbyView({ initialDone, pendingEggs, onReview, onInitialTest, onOpenEgg, onCollection }: {
   initialDone: boolean;
   pendingEggs: number;
-  onReview: (op: "mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq") => void;
+  onReview: (op: "mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq" | "sys") => void;
   onInitialTest: () => void;
   onOpenEgg: () => void;
   onCollection: () => void;
