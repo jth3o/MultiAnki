@@ -13,20 +13,178 @@ export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g
 //   f = fraction (a/b), d = decimal, p = percent
 export type ConvOp = "conv-fd" | "conv-fp" | "conv-df" | "conv-dp" | "conv-pf" | "conv-pd";
 
-export type EqOp = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6" | "eq-frac";
+export type EqOp  = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6" | "eq-frac";
+export type SysOp = "sys-l1" | "sys-l2" | "sys-l3" | "sys-l4";
 
 export interface Pair {
   a: number;
   b: number;
-  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp/EqOp = others
-  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp;
-  c?: number;       // triangle perimeter third side, OR abs value second solution
-  answer?: number;  // equation answer (x value, or first/larger solution for abs value)
-  eqStr?: string;   // display string e.g. "3x + 5 = 14"
+  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp/EqOp/SysOp = others
+  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp;
+  c?: number;       // triangle perimeter third side, OR abs value / sys second answer
+  answer?: number;  // equation answer (x value, or first/larger solution for abs value, or sys X)
+  eqStr?: string;   // display string; for sys: "eq1|eq2|xAns|yAns"
 }
 
 export function isEq(pair: Partial<Pair>): boolean {
   return typeof pair.op === "string" && pair.op.startsWith("eq-");
+}
+
+export function isSys(pair: Partial<Pair>): boolean {
+  return typeof pair.op === "string" && pair.op.startsWith("sys-");
+}
+
+export function sysLevel(points: number): 1 | 2 | 3 | 4 | "review" {
+  if (points >= 12) return "review";
+  if (points >= 9)  return 4;
+  if (points >= 6)  return 3;
+  if (points >= 3)  return 2;
+  return 1;
+}
+
+export const SYS_LEVEL_NAMES: Record<1 | 2 | 3 | 4 | "review", string> = {
+  1: "One Variable Given",
+  2: "Substitution",
+  3: "Elimination",
+  4: "Multiply & Eliminate",
+  review: "Review",
+};
+
+// sys eqStr format: "eq1|eq2|xAnswer|yAnswer"
+function sysP(eq1: string, eq2: string, x: number, y: number, op: SysOp): Pair {
+  return { a: x, b: y, op, answer: x, c: y, eqStr: `${eq1}|${eq2}|${x}|${y}` };
+}
+const cv = (n: number, v: string) => (n === 1 ? v : `${n}${v}`);
+const sterm = (n: number, v: string) =>
+  n === 1 ? ` + ${v}` : n === -1 ? ` − ${v}` : n > 0 ? ` + ${n}${v}` : ` − ${Math.abs(n)}${v}`;
+
+export function buildSystemsQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
+  if (level === "review") {
+    return shuffle([
+      ...buildSystemsQueue(1).slice(0, 8),
+      ...buildSystemsQueue(2).slice(0, 8),
+      ...buildSystemsQueue(3).slice(0, 8),
+      ...buildSystemsQueue(4).slice(0, 8),
+    ]);
+  }
+
+  const pairs: Pair[] = [];
+
+  if (level === 1) {
+    // Y = n given, solve for X in aX + bY = c
+    for (let y = 1; y <= 8; y++) {
+      for (let a = 1; a <= 6; a++) {
+        for (let x = 1; x <= 8; x++) {
+          pairs.push(sysP(`Y = ${y}`, `${cv(a, "X")} + Y = ${a * x + y}`, x, y, "sys-l1"));
+          if (a > 1) {
+            const rhs = a * x - y;
+            if (rhs > 0) pairs.push(sysP(`Y = ${y}`, `${cv(a, "X")} − Y = ${rhs}`, x, y, "sys-l1"));
+          }
+        }
+      }
+    }
+    // X = n given, solve for Y in X + bY = c
+    for (let x = 1; x <= 8; x++) {
+      for (let b = 1; b <= 6; b++) {
+        for (let y = 1; y <= 8; y++) {
+          pairs.push(sysP(`X = ${x}`, `X${sterm(b, "Y")} = ${x + b * y}`, x, y, "sys-l1"));
+        }
+      }
+    }
+  }
+
+  if (level === 2) {
+    // Y = aX + b (substitution), cX + Y = d
+    for (let a = 1; a <= 4; a++) {
+      for (let b = -6; b <= 6; b++) {
+        if (b === 0) continue;
+        for (let c = 1; c <= 6; c++) {
+          for (let x = 1; x <= 8; x++) {
+            const y = a * x + b;
+            if (y <= 0 || y > 30) continue;
+            const d = c * x + y;
+            const eq1 = `Y = ${cv(a, "X")}${b > 0 ? ` + ${b}` : ` − ${Math.abs(b)}`}`;
+            const eq2 = `${cv(c, "X")} + Y = ${d}`;
+            pairs.push(sysP(eq1, eq2, x, y, "sys-l2"));
+          }
+        }
+      }
+    }
+    // X = aY + b, X + cY = d
+    for (let a = 1; a <= 3; a++) {
+      for (let b = 1; b <= 6; b++) {
+        for (let c = 1; c <= 5; c++) {
+          for (let y = 1; y <= 8; y++) {
+            const x = a * y + b;
+            if (x > 30) continue;
+            const d = x + c * y;
+            const eq1 = `X = ${cv(a, "Y")} + ${b}`;
+            const eq2 = `X${sterm(c, "Y")} = ${d}`;
+            pairs.push(sysP(eq1, eq2, x, y, "sys-l2"));
+          }
+        }
+      }
+    }
+  }
+
+  if (level === 3) {
+    // Elimination by subtraction: aX + Y = p, bX + Y = q  (a ≠ b)
+    for (let a = 3; a <= 8; a++) {
+      for (let b = 1; b <= a - 1; b++) {
+        for (let x = 1; x <= 8; x++) {
+          for (let y = 1; y <= 8; y++) {
+            pairs.push(sysP(`${cv(a, "X")} + Y = ${a * x + y}`, `${cv(b, "X")} + Y = ${b * x + y}`, x, y, "sys-l3"));
+          }
+        }
+      }
+    }
+    // Elimination by addition: aX + Y = p, bX − Y = q
+    for (let a = 2; a <= 6; a++) {
+      for (let b = 1; b <= 5; b++) {
+        for (let x = 1; x <= 6; x++) {
+          for (let y = 1; y <= 8; y++) {
+            const q = b * x - y;
+            if (q <= 0) continue;
+            pairs.push(sysP(`${cv(a, "X")} + Y = ${a * x + y}`, `${cv(b, "X")} − Y = ${q}`, x, y, "sys-l3"));
+          }
+        }
+      }
+    }
+    // Elimination of X: X + aY = p, X + bY = q  (a ≠ b)
+    for (let a = 3; a <= 7; a++) {
+      for (let b = 1; b <= a - 1; b++) {
+        for (let x = 1; x <= 8; x++) {
+          for (let y = 1; y <= 6; y++) {
+            pairs.push(sysP(`X${sterm(a, "Y")} = ${x + a * y}`, `X${sterm(b, "Y")} = ${x + b * y}`, x, y, "sys-l3"));
+          }
+        }
+      }
+    }
+  }
+
+  if (level === 4) {
+    // Multiply one equation to match coefficients, then eliminate
+    // k*(aX + bY) = k*p  then subtract from cX + bY = q
+    const configs: [number, number, number, number][] = [
+      [2, 1, 3, 1], [2, 1, 4, 1], [3, 1, 5, 1],
+      [2, 1, 3, 2], [3, 1, 4, 3], [2, 3, 4, 3],
+      [3, 2, 5, 2], [2, 5, 4, 5], [3, 4, 6, 4],
+    ];
+    for (const [a1, b1, a2, b2] of configs) {
+      for (let x = 1; x <= 8; x++) {
+        for (let y = 1; y <= 8; y++) {
+          const c1 = a1 * x + b1 * y;
+          const c2 = a2 * x + b2 * y;
+          if (c1 > 60 || c2 > 60) continue;
+          const eq1 = `${cv(a1, "X")}${sterm(b1, "Y")} = ${c1}`;
+          const eq2 = `${cv(a2, "X")}${sterm(b2, "Y")} = ${c2}`;
+          pairs.push(sysP(eq1, eq2, x, y, "sys-l4"));
+        }
+      }
+    }
+  }
+
+  return shuffle(pairs).slice(0, 15);
 }
 
 // Returns which level to serve based on cumulative points (3 pts per level, 18 total)
