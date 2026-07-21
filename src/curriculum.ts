@@ -13,7 +13,7 @@ export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g
 //   f = fraction (a/b), d = decimal, p = percent
 export type ConvOp = "conv-fd" | "conv-fp" | "conv-df" | "conv-dp" | "conv-pf" | "conv-pd";
 
-export type EqOp = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6";
+export type EqOp = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6" | "eq-frac";
 
 export interface Pair {
   a: number;
@@ -53,6 +53,81 @@ export const EQ_LEVEL_NAMES: Record<1|2|3|4|5|6|"review", string> = {
 // Sign helpers for equation string building
 function addC(n: number): string { return n >= 0 ? ` + ${n}` : ` − ${Math.abs(n)}`; }
 
+function buildFractionEqQueue(): Pair[] {
+  const pairs: Pair[] = [];
+
+  // x/a = b → x = a*b
+  for (let a = 2; a <= 6; a++) {
+    for (let b = -8; b <= 10; b++) {
+      if (b === 0) continue;
+      pairs.push({ a, b: 0, op: "eq-frac", answer: a * b, eqStr: `x/${a} = ${b}` });
+    }
+  }
+
+  // x/a + b = c → x = a*(c−b)
+  for (let a = 2; a <= 5; a++) {
+    for (let add = 1; add <= 8; add++) {
+      for (let c = -5; c <= 10; c++) {
+        const x = a * (c - add);
+        if (x === 0 || Math.abs(x) > 30) continue;
+        pairs.push({ a, b: 0, op: "eq-frac", answer: x, eqStr: `x/${a} + ${add} = ${c}` });
+      }
+    }
+  }
+
+  // x/a − b = c → x = a*(c+b)
+  for (let a = 2; a <= 5; a++) {
+    for (let sub = 1; sub <= 8; sub++) {
+      for (let c = -5; c <= 10; c++) {
+        const x = a * (c + sub);
+        if (x === 0 || Math.abs(x) > 30) continue;
+        pairs.push({ a, b: 0, op: "eq-frac", answer: x, eqStr: `x/${a} − ${sub} = ${c}` });
+      }
+    }
+  }
+
+  // (x + a)/b = c → x = b*c − a
+  for (let b = 2; b <= 5; b++) {
+    for (let a = 1; a <= 8; a++) {
+      for (let c = 1; c <= 8; c++) {
+        const x = b * c - a;
+        if (x === 0 || Math.abs(x) > 30) continue;
+        pairs.push({ a, b, op: "eq-frac", answer: x, eqStr: `(x + ${a})/${b} = ${c}` });
+      }
+    }
+  }
+
+  // (x − a)/b = c → x = b*c + a
+  for (let b = 2; b <= 5; b++) {
+    for (let a = 1; a <= 8; a++) {
+      for (let c = 1; c <= 8; c++) {
+        const x = b * c + a;
+        if (x === 0 || Math.abs(x) > 30) continue;
+        pairs.push({ a, b, op: "eq-frac", answer: x, eqStr: `(x − ${a})/${b} = ${c}` });
+      }
+    }
+  }
+
+  // Variables on both sides: x/a + b = x/c + d
+  // x = (d - b) * ac / (c - a) — only generate pairs where ac/(c-a) is a whole number
+  const bothSidePairs: [number, number][] = [[2,3],[2,4],[2,6],[3,4],[3,6],[4,5],[4,6],[5,6]];
+  for (const [a, c] of bothSidePairs) {
+    const mult = (a * c) / (c - a); // guaranteed integer for these pairs
+    for (let b = -4; b <= 4; b++) {
+      for (let d = -4; d <= 4; d++) {
+        if (d === b) continue; // no solution or degenerate
+        const x = (d - b) * mult;
+        if (!Number.isInteger(x) || x === 0 || Math.abs(x) > 36) continue;
+        const lhs = b === 0 ? `x/${a}` : `x/${a}${addC(b)}`;
+        const rhs = d === 0 ? `x/${c}` : `x/${c}${addC(d)}`;
+        pairs.push({ a, b: c, op: "eq-frac", answer: x, eqStr: `${lhs} = ${rhs}` });
+      }
+    }
+  }
+
+  return shuffle(pairs);
+}
+
 export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pair[] {
   if (level === "review") {
     return shuffle([
@@ -62,6 +137,7 @@ export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pai
       ...buildEquationQueue(4).slice(0, 10),
       ...buildEquationQueue(5).slice(0, 10),
       ...buildEquationQueue(6).slice(0, 10),
+      ...buildFractionEqQueue().slice(0, 10),
     ]);
   }
 

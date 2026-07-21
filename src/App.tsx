@@ -5,7 +5,8 @@ import {
   isGeo, geoAnswer, isConv, convAnswer, isEq, eqLevel, EQ_LEVEL_NAMES,
   type Pair, type SessionMode, type FactStat, type ConvOp,
 } from "./curriculum";
-import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, fetchEqPoints, upsertEqPoints, type PairWeight } from "./supabase";
+import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, fetchEqPoints, upsertEqPoints, fetchStudentProgress, addCorrectAnswers, recordEggOpened, fetchCollection, addToCollection, type PairWeight, type OwnedCollectible } from "./supabase";
+import { COLLECTIBLES, RARITY_LABEL, RARITY_COLOR, collectibleImageUrl, rollCollectible, type Collectible } from "./collectibles";
 import "./App.css";
 
 // ─── localStorage (name only) ─────────────────────────────────────────────────
@@ -101,7 +102,7 @@ function signedExpected(pair: Pair, signs: Signs): number {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AppPhase = "lobby" | "initial-welcome" | "loading" | "practice" | "review" | "session-done";
+type AppPhase = "lobby" | "initial-welcome" | "loading" | "practice" | "review" | "session-done" | "egg-reveal" | "collection";
 
 interface PracticeFeedback { correct: boolean; answer: number; hasPi?: boolean; answerText?: string; }
 
@@ -121,6 +122,9 @@ export default function App() {
   const [appReady, setAppReady]               = useState<boolean>(!loadStudentName()); // false when name known but data not yet fetched
   const [practiceDurationSecs, setPracticeDurationSecs] = useState<number>(300);
   const [eqPoints, setEqPoints]               = useState<number>(0);
+  const [pendingEggs, setPendingEggs]         = useState<number>(0);
+  const [collection, setCollection]           = useState<OwnedCollectible[]>([]);
+  const [revealedCollectible, setRevealedCollectible] = useState<Collectible | null>(null);
   const [phase, setPhase]                     = useState<AppPhase>("lobby");
   const [activeMode, setActiveMode]           = useState<SessionMode>("practice");
 
@@ -151,6 +155,8 @@ export default function App() {
   const activeModeRef       = useRef<SessionMode>("practice");
   const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq">("mult");
   const eqPointsRef         = useRef<number>(0);
+  const totalCorrectRef     = useRef<number>(0);
+  const eggsOpenedRef       = useRef<number>(0);
   const activeEqLevelRef    = useRef<string>("");
   const pendingEqQueueRef   = useRef<Pair[] | null>(null);
   const sessionExpiredRef   = useRef(false);
@@ -187,16 +193,22 @@ export default function App() {
     const name = loadStudentName();
     if (!name) return;
     (async () => {
-      const [done, allWeights, durationStr, eqPts] = await Promise.all([
+      const [done, allWeights, durationStr, eqPts, prog, coll] = await Promise.all([
         fetchInitialTestDone(name),
         fetchAllPairWeights(name),
         fetchSetting("practice_duration_secs", "300"),
         fetchEqPoints(name),
+        fetchStudentProgress(name),
+        fetchCollection(name),
       ]);
       setInitialDone(done);
       setProgress(progressFromWeightMap(allWeights));
       setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
       setEqPoints(eqPts);
+      totalCorrectRef.current = prog.totalCorrect;
+      eggsOpenedRef.current = prog.eggsOpened;
+      setPendingEggs(Math.floor(prog.totalCorrect / 20) - prog.eggsOpened);
+      setCollection(coll);
       setPhase(done ? "lobby" : "initial-welcome");
       setAppReady(true);
     })();
@@ -282,6 +294,15 @@ export default function App() {
       correct,
       total,
     });
+
+    // Award eggs based on correct answers this session
+    if (correct > 0) {
+      addCorrectAnswers(student, correct).then(({ totalCorrect, eggsOpened }) => {
+        totalCorrectRef.current = totalCorrect;
+        eggsOpenedRef.current = eggsOpened;
+        setPendingEggs(Math.floor(totalCorrect / 20) - eggsOpened);
+      });
+    }
 
     setSessionResult({
       mode: curPhase === "review" ? "review" : mode,
@@ -681,14 +702,31 @@ export default function App() {
     setPhase(initialDone ? "lobby" : "initial-welcome");
   };
 
+  // ── Open egg ───────────────────────────────────────────────────────────────
+
+  const openEgg = () => {
+    const collectible = rollCollectible();
+    setRevealedCollectible(collectible);
+    setPhase("egg-reveal");
+    const name = studentNameRef.current ?? "";
+    recordEggOpened(name);
+    addToCollection(name, collectible.id).then(() => {
+      fetchCollection(name).then(setCollection);
+    });
+    eggsOpenedRef.current += 1;
+    setPendingEggs((p) => Math.max(0, p - 1));
+  };
+
   // ── Sign in ────────────────────────────────────────────────────────────────
 
   const handleSignIn = async (name: string) => {
-    const [done, allWeights, durationStr, eqPts] = await Promise.all([
+    const [done, allWeights, durationStr, eqPts, prog, coll] = await Promise.all([
       fetchInitialTestDone(name),
       fetchAllPairWeights(name),
       fetchSetting("practice_duration_secs", "300"),
       fetchEqPoints(name),
+      fetchStudentProgress(name),
+      fetchCollection(name),
     ]);
     saveStudentName(name);
     setStudentName(name);
@@ -696,6 +734,10 @@ export default function App() {
     setProgress(progressFromWeightMap(allWeights));
     setPracticeDurationSecs(parseInt(durationStr, 10) || 300);
     setEqPoints(eqPts);
+    totalCorrectRef.current = prog.totalCorrect;
+    eggsOpenedRef.current = prog.eggsOpened;
+    setPendingEggs(Math.floor(prog.totalCorrect / 20) - prog.eggsOpened);
+    setCollection(coll);
     setAppReady(true);
     setPhase(done ? "lobby" : "initial-welcome");
   };
@@ -740,8 +782,27 @@ export default function App() {
       {phase === "lobby" && (
         <LobbyView
           initialDone={initialDone}
+          pendingEggs={pendingEggs}
           onReview={startReview}
           onInitialTest={() => setPhase("initial-welcome")}
+          onOpenEgg={openEgg}
+          onCollection={() => setPhase("collection")}
+        />
+      )}
+
+      {phase === "egg-reveal" && revealedCollectible && (
+        <EggRevealView
+          collectible={revealedCollectible}
+          pendingEggs={pendingEggs}
+          onClose={() => setPhase("lobby")}
+          onOpenNext={pendingEggs > 0 ? openEgg : undefined}
+        />
+      )}
+
+      {phase === "collection" && (
+        <CollectionView
+          collection={collection}
+          onBack={() => setPhase("lobby")}
         />
       )}
 
@@ -845,13 +906,27 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
 
 // ─── Lobby ────────────────────────────────────────────────────────────────────
 
-function LobbyView({ initialDone, onReview, onInitialTest }: {
+function LobbyView({ initialDone, pendingEggs, onReview, onInitialTest, onOpenEgg, onCollection }: {
   initialDone: boolean;
+  pendingEggs: number;
   onReview: (op: "mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq") => void;
   onInitialTest: () => void;
+  onOpenEgg: () => void;
+  onCollection: () => void;
 }) {
   return (
     <div className="lobby">
+      {pendingEggs > 0 && (
+        <button className="btn-egg-banner" onClick={onOpenEgg}>
+          <span className="egg-banner-icon">🥚</span>
+          <span>You have {pendingEggs} egg{pendingEggs !== 1 ? "s" : ""}! Tap to open</span>
+        </button>
+      )}
+
+      <button className="btn-collection" onClick={onCollection}>
+        My Collection
+      </button>
+
       {!initialDone && (
         <button className="btn-initial-test" onClick={onInitialTest}>
           Take the initial test
@@ -1183,6 +1258,163 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
           </AutoAdvance>
         )
       )}
+    </div>
+  );
+}
+
+// ─── Egg reveal ───────────────────────────────────────────────────────────────
+
+const RARITY_CONFETTI: Record<Rarity, string[]> = {
+  common:    ["#9ca3af", "#d1d5db", "#ffffff"],
+  rare:      ["#3b82f6", "#93c5fd", "#ffffff", "#1d4ed8"],
+  epic:      ["#a855f7", "#d8b4fe", "#ffffff", "#7c3aed"],
+  legendary: ["#f59e0b", "#fde68a", "#ffffff", "#d97706", "#ef4444"],
+};
+
+const TAP_HINTS = ["Tap the egg!", "Keep going…", "Almost there…", "ONE MORE!"];
+
+function EggRevealView({ collectible, pendingEggs, onClose, onOpenNext }: {
+  collectible: Collectible;
+  pendingEggs: number;
+  onClose: () => void;
+  onOpenNext?: () => void;
+}) {
+  const [taps, setTaps] = useState(0);
+  const [shaking, setShaking] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  const TAPS_NEEDED = 4;
+  const color = RARITY_COLOR[collectible.rarity];
+
+  const handleTap = () => {
+    if (revealed) return;
+    const next = taps + 1;
+    setTaps(next);
+    setShaking(true);
+    setTimeout(() => setShaking(false), 400);
+
+    if (next >= TAPS_NEEDED) {
+      setTimeout(() => {
+        setRevealed(true);
+        import("canvas-confetti").then(({ default: confetti }) => {
+          const colors = RARITY_CONFETTI[collectible.rarity];
+          confetti({ particleCount: 120, spread: 90, origin: { y: 0.5 }, colors });
+          if (collectible.rarity === "legendary") {
+            setTimeout(() => confetti({ particleCount: 80, spread: 120, origin: { y: 0.4 }, colors, angle: 60 }), 300);
+            setTimeout(() => confetti({ particleCount: 80, spread: 120, origin: { y: 0.4 }, colors, angle: 120 }), 300);
+          } else if (collectible.rarity === "epic") {
+            setTimeout(() => confetti({ particleCount: 60, spread: 100, origin: { y: 0.4 }, colors }), 250);
+          }
+        });
+      }, 350);
+    }
+  };
+
+  const crackClass = taps === 0 ? "" : taps === 1 ? " crack-1" : taps === 2 ? " crack-2" : taps >= 3 ? " crack-3" : "";
+
+  return (
+    <div className="card egg-reveal-card">
+      {!revealed ? (
+        <>
+          <p className="egg-reveal-hint">{TAP_HINTS[Math.min(taps, TAP_HINTS.length - 1)]}</p>
+          <div className="egg-tap-progress">
+            {Array.from({ length: TAPS_NEEDED }).map((_, i) => (
+              <div key={i} className={`egg-tap-dot${i < taps ? " filled" : ""}`} />
+            ))}
+          </div>
+          <div
+            className={`egg-shell${crackClass}${shaking ? " shaking" : ""}`}
+            onClick={handleTap}
+            style={taps > 0 ? { filter: `drop-shadow(0 0 ${taps * 6}px ${color})` } : undefined}
+          >
+            <div className="egg-top" />
+            <div className="egg-bottom" />
+            {taps >= 1 && <div className="egg-crack crack-a" />}
+            {taps >= 2 && <div className="egg-crack crack-b" />}
+            {taps >= 3 && <div className="egg-crack crack-c" />}
+          </div>
+        </>
+      ) : (
+        <div className="egg-result">
+          <p className="egg-rarity-badge" style={{ color, borderColor: color, boxShadow: `0 0 12px ${color}55` }}>
+            ✦ {RARITY_LABEL[collectible.rarity]} ✦
+          </p>
+          <img className="egg-char-img egg-char-bounce" src={collectibleImageUrl(collectible)} alt={collectible.name} />
+          <p className="egg-char-name">{collectible.name}</p>
+          <p className="egg-char-bit">{collectible.bit}</p>
+          <div className="actions">
+            {onOpenNext && (
+              <button className="btn-primary" onClick={onOpenNext}>
+                Open next egg ({pendingEggs} left)
+              </button>
+            )}
+            <button className={onOpenNext ? "btn-ghost" : "btn-primary"} onClick={onClose}>
+              Back to lobby
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Collection ────────────────────────────────────────────────────────────────
+
+function CollectionView({ collection, onBack }: {
+  collection: OwnedCollectible[];
+  onBack: () => void;
+}) {
+  const [selected, setSelected] = useState<Collectible | null>(null);
+  const ownedMap = new Map(collection.map((o) => [o.collectibleId, o.copies]));
+
+  return (
+    <div className="collection-view">
+      <div className="collection-header">
+        <button className="btn-back" onClick={onBack}>←</button>
+        <span className="session-label">My Collection</span>
+        <span className="collection-count">{ownedMap.size} / {COLLECTIBLES.length}</span>
+      </div>
+
+      {selected && (
+        <div className="collection-modal" onClick={() => setSelected(null)}>
+          <div className="collection-modal-card" onClick={(e) => e.stopPropagation()}>
+            <p className="egg-rarity-badge" style={{ color: RARITY_COLOR[selected.rarity], borderColor: RARITY_COLOR[selected.rarity] }}>
+              {RARITY_LABEL[selected.rarity]}
+            </p>
+            <img className="egg-char-img" src={collectibleImageUrl(selected)} alt={selected.name} />
+            <p className="egg-char-name">{selected.name}</p>
+            <p className="egg-char-bit">{selected.bit}</p>
+            {(ownedMap.get(selected.id) ?? 0) > 1 && (
+              <p className="collection-copies">×{ownedMap.get(selected.id)} copies</p>
+            )}
+            <button className="btn-ghost" onClick={() => setSelected(null)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      <div className="collection-grid">
+        {COLLECTIBLES.map((c) => {
+          const copies = ownedMap.get(c.id) ?? 0;
+          const owned = copies > 0;
+          return (
+            <div
+              key={c.id}
+              className={`collection-cell${owned ? " owned" : ""}`}
+              onClick={() => owned && setSelected(c)}
+            >
+              <img
+                className="collection-img"
+                src={collectibleImageUrl(c)}
+                alt={owned ? c.name : "???"}
+                style={owned ? undefined : { filter: "brightness(0)" }}
+              />
+              {copies > 1 && <span className="collection-copies-badge">×{copies}</span>}
+              <p className="collection-cell-name" style={{ color: owned ? RARITY_COLOR[c.rarity] : "var(--muted)" }}>
+                {owned ? c.name : "???"}
+              </p>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

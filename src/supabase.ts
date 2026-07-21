@@ -226,6 +226,50 @@ export async function fetchAllSessions(): Promise<TeacherSession[]> {
   return data ?? [];
 }
 
+// ─── Collectible system ───────────────────────────────────────────────────────
+
+export interface OwnedCollectible { collectibleId: number; copies: number; }
+
+export async function fetchStudentProgress(name: string): Promise<{ totalCorrect: number; eggsOpened: number }> {
+  const { data } = await supabase.from("student_progress")
+    .select("total_correct, eggs_opened").eq("student_name", name).maybeSingle();
+  return { totalCorrect: data?.total_correct ?? 0, eggsOpened: data?.eggs_opened ?? 0 };
+}
+
+export async function addCorrectAnswers(name: string, count: number): Promise<{ totalCorrect: number; eggsOpened: number }> {
+  const current = await fetchStudentProgress(name);
+  const newTotal = current.totalCorrect + count;
+  await supabase.from("student_progress").upsert(
+    { student_name: name, total_correct: newTotal, eggs_opened: current.eggsOpened },
+    { onConflict: "student_name" }
+  );
+  return { totalCorrect: newTotal, eggsOpened: current.eggsOpened };
+}
+
+export async function recordEggOpened(name: string): Promise<void> {
+  const current = await fetchStudentProgress(name);
+  await supabase.from("student_progress").upsert(
+    { student_name: name, total_correct: current.totalCorrect, eggs_opened: current.eggsOpened + 1 },
+    { onConflict: "student_name" }
+  );
+}
+
+export async function fetchCollection(name: string): Promise<OwnedCollectible[]> {
+  const { data } = await supabase.from("student_collectibles")
+    .select("collectible_id, copies").eq("student_name", name);
+  return (data ?? []).map((r) => ({ collectibleId: r.collectible_id, copies: r.copies }));
+}
+
+export async function addToCollection(name: string, collectibleId: number): Promise<void> {
+  const { data } = await supabase.from("student_collectibles")
+    .select("copies").eq("student_name", name).eq("collectible_id", collectibleId).maybeSingle();
+  const newCopies = (data?.copies ?? 0) + 1;
+  await supabase.from("student_collectibles").upsert(
+    { student_name: name, collectible_id: collectibleId, copies: newCopies },
+    { onConflict: "student_name,collectible_id" }
+  );
+}
+
 // ─── Equation progress ────────────────────────────────────────────────────────
 
 export async function fetchEqPoints(student_name: string): Promise<number> {
