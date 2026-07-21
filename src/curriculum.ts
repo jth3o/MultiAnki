@@ -241,18 +241,42 @@ export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pai
         }
       }
     }
+    // distributive property: a(x + b) = c and a(x − b) = c
+    for (let a = 2; a <= 8; a++) {
+      for (let b = 1; b <= 10; b++) {
+        for (let x = -8; x <= 12; x++) {
+          if (x === 0) continue;
+          pairs.push({ a, b, op: "eq-l2", answer: x, eqStr: `${a}(x + ${b}) = ${a * (x + b)}` });
+          pairs.push({ a, b, op: "eq-l2", answer: x, eqStr: `${a}(x − ${b}) = ${a * (x - b)}` });
+        }
+      }
+    }
   }
 
   if (level === 3) {
-    // ax + b = cx + d  (a > c, integer solution x > 0)
+    // ax + b = cx + d  (a > c, integer solution x > 0), wider coefficient range
     const consts = [-12, -9, -6, -3, 3, 6, 9, 12];
-    for (let a = 3; a <= 8; a++) {
-      for (let c = 1; c <= 3; c++) {
+    for (let a = 3; a <= 12; a++) {
+      for (let c = 1; c <= 5; c++) {
         if (c >= a) continue;
         for (let x = 1; x <= 12; x++) {
           for (const b of consts) {
             const d = (a - c) * x + b;
             pairs.push({ a, b, op: "eq-l3", answer: x, eqStr: `${a}x${addC(b)} = ${c}x${addC(d)}` });
+          }
+        }
+      }
+    }
+    // a(x + b) = cx + d  (distributive on one side)
+    for (let a = 3; a <= 8; a++) {
+      for (let c = 1; c <= 4; c++) {
+        if (c >= a) continue;
+        for (let b = 1; b <= 8; b++) {
+          for (let x = 1; x <= 10; x++) {
+            // a(x+b) = cx+d  →  ax+ab = cx+d  →  d = (a-c)x + ab
+            const d = (a - c) * x + a * b;
+            if (d <= 0 || d > 100) continue;
+            pairs.push({ a, b, op: "eq-l3", answer: x, eqStr: `${a}(x + ${b}) = ${c}x${addC(d)}` });
           }
         }
       }
@@ -278,6 +302,20 @@ export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pai
     for (let a = 2; a <= 8; a++) {
       for (let k = 1; k <= 8; k++) {
         pairs.push({ a, b: a * k, op: "eq-l4", answer: k, c: -k, eqStr: `|${a}x| = ${a * k}` });
+      }
+    }
+    // |ax + b| = c  →  x = (c−b)/a  or  x = (−c−b)/a  (only when both are integers)
+    for (let a = 2; a <= 6; a++) {
+      for (let b = -10; b <= 10; b++) {
+        if (b === 0) continue;
+        for (let c = 2; c <= 15; c++) {
+          const s1 = (c - b), s2 = (-c - b);
+          if (s1 % a !== 0 || s2 % a !== 0) continue;
+          const x1 = s1 / a, x2 = s2 / a;
+          if (x1 === 0 || x2 === 0 || x1 === x2) continue;
+          const bStr = b > 0 ? ` + ${b}` : ` − ${Math.abs(b)}`;
+          pairs.push({ a, b, op: "eq-l4", answer: Math.max(x1, x2), c: Math.min(x1, x2), eqStr: `|${a}x${bStr}| = ${c}` });
+        }
       }
     }
   }
