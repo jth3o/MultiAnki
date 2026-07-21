@@ -6,7 +6,7 @@ import {
   type Pair, type SessionMode, type FactStat, type ConvOp,
 } from "./curriculum";
 import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, fetchEqPoints, upsertEqPoints, fetchStudentProgress, addCorrectAnswers, recordEggOpened, fetchCollection, addToCollection, type PairWeight, type OwnedCollectible } from "./supabase";
-import { COLLECTIBLES, RARITY_LABEL, RARITY_COLOR, collectibleImageUrl, rollCollectible, type Collectible } from "./collectibles";
+import { COLLECTIBLES, RARITY_LABEL, RARITY_COLOR, collectibleImageUrl, rollCollectible, type Collectible, type Rarity } from "./collectibles";
 import "./App.css";
 
 // ─── localStorage (name only) ─────────────────────────────────────────────────
