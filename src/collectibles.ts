@@ -1,4 +1,4 @@
-export type Rarity = "common" | "rare" | "epic" | "legendary";
+export type Rarity = "common" | "rare" | "epic" | "legendary" | "mythic";
 
 export interface Collectible {
   id: number;
@@ -9,7 +9,7 @@ export interface Collectible {
 }
 
 export const COLLECTIBLES: Collectible[] = [
-  { id: 1,  name: "67",                      rarity: "common",    bit: "scientifically the most popular random number. he goes to a different school you wouldn't know him", filename: "01_67.png" },
+  { id: 1,  name: "67",                      rarity: "mythic",    bit: "scientifically the most popular random number. he goes to a different school you wouldn't know him", filename: "01_67.png" },
   { id: 2,  name: "Carry the 1",             rarity: "common",    bit: "your dad whispered this to himself and felt powerful", filename: "02_Carry_the_1.png" },
   { id: 3,  name: "Remainder Randy",         rarity: "common",    bit: "he didn't fit. he's okay with it. (he's not okay with it)", filename: "03_Remainder_Randy.png" },
   { id: 4,  name: "Long Division Larry",     rarity: "common",    bit: "6 steps minimum or he walks", filename: "04_Long_Division_Larry.png" },
@@ -42,11 +42,11 @@ export const COLLECTIBLES: Collectible[] = [
 ];
 
 export const RARITY_LABEL: Record<Rarity, string> = {
-  common: "Common", rare: "Rare", epic: "Epic", legendary: "Legendary",
+  common: "Common", rare: "Rare", epic: "Epic", legendary: "Legendary", mythic: "Mythic",
 };
 
 export const RARITY_COLOR: Record<Rarity, string> = {
-  common: "#9ca3af", rare: "#3b82f6", epic: "#a855f7", legendary: "#f59e0b",
+  common: "#9ca3af", rare: "#3b82f6", epic: "#a855f7", legendary: "#f59e0b", mythic: "#ff1744",
 };
 
 const SUPABASE_STORAGE = "https://xftkfdzqfunmqwwbskll.supabase.co/storage/v1/object/public/collectibles";
@@ -58,9 +58,10 @@ export function collectibleImageUrl(c: Collectible): string {
 export function rollCollectible(): Collectible {
   const roll = Math.random() * 100;
   let rarity: Rarity;
-  if (roll < 2)       rarity = "legendary";
-  else if (roll < 12) rarity = "epic";
-  else if (roll < 40) rarity = "rare";
+  if (roll < 0.5)     rarity = "mythic";
+  else if (roll < 2.5)  rarity = "legendary";
+  else if (roll < 12.5) rarity = "epic";
+  else if (roll < 40.5) rarity = "rare";
   else                rarity = "common";
   const pool = COLLECTIBLES.filter((c) => c.rarity === rarity);
   return pool[Math.floor(Math.random() * pool.length)];

@@ -142,6 +142,8 @@ export default function App() {
   const [secondsLeft, setSecondsLeft]         = useState<number | null>(null);
   const [sessionResult, setSessionResult]     = useState<SessionResult | null>(null);
   const [questionSigns, setQuestionSigns]     = useState<Signs>({ negA: false, negB: false });
+  const [streak, setStreak]                   = useState(0);
+  const bonusPointsRef = useRef(0);
 
   const inputRef        = useRef<HTMLInputElement>(null);
   const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -316,7 +318,7 @@ export default function App() {
 
     // Award eggs only for solving equations and systems of equations
     if (correct > 0 && (op === "eq" || op === "sys")) {
-      addCorrectAnswers(student, correct).then(({ totalCorrect, eggsOpened }) => {
+      addCorrectAnswers(student, correct + bonusPointsRef.current).then(({ totalCorrect, eggsOpened }) => {
         totalCorrectRef.current = totalCorrect;
         eggsOpenedRef.current = eggsOpened;
         setPendingEggs(Math.floor(totalCorrect / 20) - eggsOpened);
@@ -512,6 +514,8 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
+    setStreak(0);
+    bonusPointsRef.current = 0;
     setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) || isEq(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
@@ -604,6 +608,13 @@ export default function App() {
     if (correct) {
       setSessionCorrects((c) => [...c, pair]);
       if (elapsed > SLOW_THRESHOLD_SECS) setSessionSlows((s) => [...s, pair]);
+      const newStreak = streak + 1;
+      setStreak(newStreak);
+      const op = activeOpRef.current;
+      if (op === "eq" || op === "sys") {
+        const bonus = newStreak >= 10 ? 3 : newStreak >= 5 ? 2 : newStreak >= 3 ? 1 : 0;
+        bonusPointsRef.current += bonus;
+      }
       if (isEq(pair)) {
         const newPts = Math.min(18, eqPointsRef.current + 1);
         eqPointsRef.current = newPts;
@@ -618,6 +629,7 @@ export default function App() {
       }
     } else {
       setSessionMistakes((m) => [...m, pair]);
+      setStreak(0);
     }
     setSessionCorrect((c) => c + (correct ? 1 : 0));
     setSessionTotal((t) => t + 1);
@@ -885,6 +897,7 @@ export default function App() {
           onNext={pracNext}
           onBack={handleBack}
           inputRef={inputRef}
+          streak={streak}
         />
       )}
 
@@ -1164,13 +1177,14 @@ function geoAnswerText(pair: Pair, ans: PracticeFeedback): string {
   }
 }
 
-function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef }: {
+function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, onKeyDown, pracPhase, feedback, onSubmit, onSkip, onNext, onBack, inputRef, streak }: {
   label: string; tag: string; secondsLeft: number | null;
   pair: Pair; signs: Signs; input: string; onInput: (v: string) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   pracPhase: "question" | "feedback"; feedback: PracticeFeedback | null;
   onSubmit: () => void; onSkip: () => void; onNext: () => void; onBack: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  streak: number;
 }) {
   const isDiv  = pair.op === "div";
   const isSq   = pair.op === "sq";
@@ -1220,6 +1234,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
         <button className="btn-back" onClick={onBack} aria-label="Back">←</button>
         <span className="session-label">{label}</span>
         <span className="session-tag">{tag}</span>
+        {streak >= 3 && <span className="streak-badge">🔥 {streak}</span>}
         {secondsLeft !== null && (
           <span className="session-timer">{formatTime(secondsLeft)}</span>
         )}
@@ -1346,6 +1361,7 @@ const RARITY_CONFETTI: Record<Rarity, string[]> = {
   rare:      ["#3b82f6", "#93c5fd", "#ffffff", "#1d4ed8"],
   epic:      ["#a855f7", "#d8b4fe", "#ffffff", "#7c3aed"],
   legendary: ["#f59e0b", "#fde68a", "#ffffff", "#d97706", "#ef4444"],
+  mythic:    ["#ff1744", "#ff6d6d", "#ffffff", "#ff4081", "#f59e0b", "#a855f7"],
 };
 
 const TAP_HINTS = ["Tap the egg!", "Keep going…", "Almost there…", "ONE MORE!"];

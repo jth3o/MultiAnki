@@ -357,6 +357,15 @@ body {
   width: 100%;
 }
 
+.streak-badge {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #f59e0b;
+  background: rgba(245,158,11,0.15);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
 .session-timer {
   margin-left: auto;
   font-size: 0.9375rem;
