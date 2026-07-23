@@ -314,8 +314,8 @@ export default function App() {
       total,
     });
 
-    // Award eggs based on correct answers this session
-    if (correct > 0) {
+    // Award eggs only for solving equations and systems of equations
+    if (correct > 0 && (op === "eq" || op === "sys")) {
       addCorrectAnswers(student, correct).then(({ totalCorrect, eggsOpened }) => {
         totalCorrectRef.current = totalCorrect;
         eggsOpenedRef.current = eggsOpened;
