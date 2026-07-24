@@ -757,6 +757,16 @@ export default function App() {
         upsertPairWeights(studentName ?? "", op, newWeights);
       }
     }
+    // Save egg points earned so far if in an egg-awarding unit
+    const backOp = activeOpRef.current;
+    const backCorrect = sessionCorrectRef.current;
+    if (backCorrect > 0 && (backOp === "eq" || backOp === "sys")) {
+      addCorrectAnswers(studentNameRef.current ?? "", backCorrect + bonusPointsRef.current).then(({ totalCorrect, eggsOpened }) => {
+        totalCorrectRef.current = totalCorrect;
+        eggsOpenedRef.current = eggsOpened;
+        setPendingEggs(Math.floor(totalCorrect / 20) - eggsOpened);
+      });
+    }
     setSecondsLeft(null);
     isFinishingRef.current = false;
     setPhase(initialDone ? "lobby" : "initial-welcome");
