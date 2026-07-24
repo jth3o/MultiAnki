@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   DURATIONS, buildInitialQueue, buildDivisionQueue, buildSquaresAndRootsQueue, buildGeoQueue,
-  buildAdditionQueue, buildConversionQueue, buildEquationQueue, buildSystemsQueue, buildThreeMinQueue, shuffle,
+  buildAdditionQueue, buildConversionQueue, buildEquationQueue, buildSystemsQueue, buildThreeMinQueue, buildBonusEqQueue, buildBonusSysQueue, shuffle,
   isGeo, geoAnswer, isConv, convAnswer, isEq, eqLevel, EQ_LEVEL_NAMES, isSys, sysLevel, SYS_LEVEL_NAMES,
   type Pair, type SessionMode, type FactStat, type ConvOp,
 } from "./curriculum";
@@ -13,6 +13,19 @@ import "./App.css";
 
 const NAME_KEY = "multianki_student";
 const SLOW_THRESHOLD_SECS = 5;
+
+// Randomly inserts bonus questions into a queue at roughly `rate` probability per slot
+function spliceBonus<T>(base: T[], bonusPool: T[], rate: number): T[] {
+  const result: T[] = [];
+  let bonusIdx = 0;
+  for (const item of base) {
+    if (bonusIdx < bonusPool.length && Math.random() < rate) {
+      result.push(bonusPool[bonusIdx++]);
+    }
+    result.push(item);
+  }
+  return result;
+}
 
 function loadStudentName(): string | null { return localStorage.getItem(NAME_KEY); }
 function saveStudentName(n: string) { localStorage.setItem(NAME_KEY, n); }
@@ -463,11 +476,11 @@ export default function App() {
     } else if (op === "eq") {
       const level = eqLevel(eqPoints);
       activeEqLevelRef.current = EQ_LEVEL_NAMES[level];
-      q = buildEquationQueue(level);
+      q = spliceBonus(buildEquationQueue(level), buildBonusEqQueue(), 0.15);
     } else if (op === "sys") {
       const level = sysLevel(sysPoints);
       activeSysLevelRef.current = SYS_LEVEL_NAMES[level];
-      q = buildSystemsQueue(level);
+      q = spliceBonus(buildSystemsQueue(level), buildBonusSysQueue(), 0.15);
     } else if (op === "add") {
       const wMap = new Map<string, PairWeight>();
       for (const w of progress.add) wMap.set(`${Math.min(w.a,w.b)}x${Math.max(w.a,w.b)}`, w);
@@ -612,8 +625,9 @@ export default function App() {
       setStreak(newStreak);
       const op = activeOpRef.current;
       if (op === "eq" || op === "sys") {
-        const bonus = newStreak >= 10 ? 3 : newStreak >= 5 ? 2 : newStreak >= 3 ? 1 : 0;
-        bonusPointsRef.current += bonus;
+        const streakBonus = newStreak >= 10 ? 3 : newStreak >= 5 ? 2 : newStreak >= 3 ? 1 : 0;
+        const doubleBonus = pair.bonus ? 1 : 0; // +1 extra (total 2 for the answer) on bonus questions
+        bonusPointsRef.current += streakBonus + doubleBonus;
       }
       if (isEq(pair)) {
         const newPts = Math.min(18, eqPointsRef.current + 1);
@@ -1249,6 +1263,9 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
           <span className="session-timer">{formatTime(secondsLeft)}</span>
         )}
       </div>
+      {pair.bonus && (
+        <div className="bonus-banner">⭐ Bonus Question — Double Points!</div>
+      )}
 
       {pracPhase === "question" ? (
         <>

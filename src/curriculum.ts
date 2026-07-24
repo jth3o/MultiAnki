@@ -24,6 +24,7 @@ export interface Pair {
   c?: number;       // triangle perimeter third side, OR abs value / sys second answer
   answer?: number;  // equation answer (x value, or first/larger solution for abs value, or sys X)
   eqStr?: string;   // display string; for sys: "eq1|eq2|xAns|yAns"
+  bonus?: boolean;  // double-points bonus question
 }
 
 export function isEq(pair: Partial<Pair>): boolean {
@@ -755,6 +756,81 @@ export function buildAdditionQueue(): Pair[] {
   }
 
   return shuffle(pool.map(([a, b]) => ({ a, b, op: "add" as const })));
+}
+
+// ─── Bonus questions (double points, harder) ──────────────────────────────────
+
+export function buildBonusEqQueue(): Pair[] {
+  const pairs: Pair[] = [];
+  const addC = (n: number) => n >= 0 ? ` + ${n}` : ` − ${Math.abs(n)}`;
+
+  // Multi-step with distribution on both sides: a(X + b) = c(X + d)  →  X = (cd − ab)/(a − c)
+  for (let a = 2; a <= 6; a++) {
+    for (let c = 2; c <= 6; c++) {
+      if (a === c) continue;
+      for (let b = 1; b <= 8; b++) {
+        for (let d = 1; d <= 8; d++) {
+          const num = c * d - a * b;
+          const den = a - c;
+          if (den === 0 || num % den !== 0) continue;
+          const x = num / den;
+          if (x <= 0 || x > 15) continue;
+          const lhs = `${a}(X${addC(b)})`;
+          const rhs = `${c}(X${addC(d)})`;
+          pairs.push({ a, b, op: "eq-l3", answer: x, eqStr: `${lhs} = ${rhs}`, bonus: true });
+        }
+      }
+    }
+  }
+
+  // Fraction with variable on both sides: X/a + b = X/c + d  →  X(1/c − 1/a) = b − d
+  for (let a = 2; a <= 8; a++) {
+    for (let c = 2; c <= 8; c++) {
+      if (a === c) continue;
+      for (let b = 1; b <= 10; b++) {
+        for (let d = 1; d <= 10; d++) {
+          if (b === d) continue;
+          // X/a + b = X/c + d  →  X(1/a − 1/c) = d − b  →  X(c − a)/(ac) = d − b
+          const num = (d - b) * a * c;
+          const den = c - a;
+          if (den === 0 || num % den !== 0) continue;
+          const x = num / den;
+          if (x <= 0 || x > 20 || !Number.isInteger(x)) continue;
+          const lhsB = b > 0 ? ` + ${b}` : ` − ${Math.abs(b)}`;
+          const rhsD = d > 0 ? ` + ${d}` : ` − ${Math.abs(d)}`;
+          pairs.push({ a, b, op: "eq-frac", answer: x, eqStr: `X/${a}${lhsB} = X/${c}${rhsD}`, bonus: true });
+        }
+      }
+    }
+  }
+
+  return shuffle(pairs.map(p => ({ ...p, eqStr: p.eqStr?.replace(/x/g, "X") }))).slice(0, 8);
+}
+
+export function buildBonusSysQueue(): Pair[] {
+  const pairs: Pair[] = [];
+
+  // Three-step elimination: need to multiply BOTH equations before eliminating
+  // k1*(a1X + b1Y = c1) and k2*(a2X + b2Y = c2) where LCM needed for Y coefficient
+  const configs: [number, number, number, number][] = [
+    [2, 3, 3, 2], [3, 4, 4, 3], [2, 5, 5, 2],
+    [3, 5, 5, 3], [4, 5, 5, 4], [2, 3, 5, 3],
+    [3, 2, 4, 3], [5, 2, 3, 4], [4, 3, 5, 2],
+  ];
+  for (const [a1, b1, a2, b2] of configs) {
+    for (let x = 1; x <= 6; x++) {
+      for (let y = 1; y <= 6; y++) {
+        const c1 = a1 * x + b1 * y;
+        const c2 = a2 * x + b2 * y;
+        if (c1 > 50 || c2 > 50) continue;
+        const eq1 = `${cv(a1, "X")}${sterm(b1, "Y")} = ${c1}`;
+        const eq2 = `${cv(a2, "X")}${sterm(b2, "Y")} = ${c2}`;
+        pairs.push({ ...sysP(eq1, eq2, x, y, "sys-l4"), bonus: true });
+      }
+    }
+  }
+
+  return shuffle(pairs).slice(0, 8);
 }
 
 export function shuffle<T>(arr: T[]): T[] {
