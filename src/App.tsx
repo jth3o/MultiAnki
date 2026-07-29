@@ -139,6 +139,7 @@ export default function App() {
   const [pendingEggs, setPendingEggs]         = useState<number>(0);
   const [collection, setCollection]           = useState<OwnedCollectible[]>([]);
   const [revealedCollectible, setRevealedCollectible] = useState<Collectible | null>(null);
+  const [eggOpenCount, setEggOpenCount]               = useState(0);
   const [phase, setPhase]                     = useState<AppPhase>("lobby");
   const [activeMode, setActiveMode]           = useState<SessionMode>("practice");
 
@@ -791,6 +792,7 @@ export default function App() {
   const openEgg = () => {
     const collectible = rollCollectible();
     setRevealedCollectible(collectible);
+    setEggOpenCount((n) => n + 1);
     setPhase("egg-reveal");
     const name = studentNameRef.current ?? "";
     recordEggOpened(name);
@@ -879,6 +881,7 @@ export default function App() {
 
       {phase === "egg-reveal" && revealedCollectible && (
         <EggRevealView
+          key={eggOpenCount}
           collectible={revealedCollectible}
           pendingEggs={pendingEggs}
           onClose={() => setPhase("lobby")}
