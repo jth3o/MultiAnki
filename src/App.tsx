@@ -636,7 +636,7 @@ export default function App() {
         upsertEqPoints(studentName ?? "", newPts);
       }
       if (isSys(pair)) {
-        const newPts = Math.min(12, sysPointsRef.current + 1);
+        const newPts = Math.min(6, sysPointsRef.current + 1);
         sysPointsRef.current = newPts;
         setSysPoints(newPts);
         upsertSysPoints(studentName ?? "", newPts);

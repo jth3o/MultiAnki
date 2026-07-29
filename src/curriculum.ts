@@ -36,10 +36,8 @@ export function isSys(pair: Partial<Pair>): boolean {
 }
 
 export function sysLevel(points: number): 1 | 2 | 3 | 4 | "review" {
-  if (points >= 12) return "review";
-  if (points >= 9)  return 4;
-  if (points >= 6)  return 3;
-  if (points >= 3)  return 2;
+  if (points >= 6) return "review";
+  if (points >= 3) return 2;
   return 1;
 }
 
