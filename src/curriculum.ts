@@ -62,8 +62,6 @@ export function buildSystemsQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
     return shuffle([
       ...buildSystemsQueue(1).slice(0, 8),
       ...buildSystemsQueue(2).slice(0, 8),
-      ...buildSystemsQueue(3).slice(0, 8),
-      ...buildSystemsQueue(4).slice(0, 8),
     ]);
   }
 
