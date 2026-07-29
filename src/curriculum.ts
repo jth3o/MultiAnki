@@ -36,16 +36,18 @@ export function isSys(pair: Partial<Pair>): boolean {
 }
 
 export function sysLevel(points: number): 1 | 2 | 3 | 4 | "review" {
-  if (points >= 6) return "review";
-  if (points >= 3) return 2;
+  if (points >= 12) return "review";
+  if (points >= 9)  return 4;
+  if (points >= 6)  return 3;
+  if (points >= 3)  return 2;
   return 1;
 }
 
 export const SYS_LEVEL_NAMES: Record<1 | 2 | 3 | 4 | "review", string> = {
   1: "One Variable Given",
   2: "Substitution",
-  3: "Elimination",
-  4: "Multiply & Eliminate",
+  3: "True Substitution",
+  4: "Fraction Substitution",
   review: "Review",
 };
 
@@ -60,8 +62,10 @@ const sterm = (n: number, v: string) =>
 export function buildSystemsQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
   if (level === "review") {
     return shuffle([
-      ...buildSystemsQueue(1).slice(0, 8),
-      ...buildSystemsQueue(2).slice(0, 8),
+      ...buildSystemsQueue(1).slice(0, 6),
+      ...buildSystemsQueue(2).slice(0, 6),
+      ...buildSystemsQueue(3).slice(0, 6),
+      ...buildSystemsQueue(4).slice(0, 6),
     ]);
   }
 
@@ -125,34 +129,34 @@ export function buildSystemsQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
   }
 
   if (level === 3) {
-    // Elimination by subtraction: aX + Y = p, bX + Y = q  (a ≠ b)
-    for (let a = 3; a <= 8; a++) {
-      for (let b = 1; b <= a - 1; b++) {
-        for (let x = 1; x <= 8; x++) {
-          for (let y = 1; y <= 8; y++) {
-            pairs.push(sysP(`${cv(a, "X")} + Y = ${a * x + y}`, `${cv(b, "X")} + Y = ${b * x + y}`, x, y, "sys-l3"));
+    // True substitution: one equation has coefficient 1 on X or Y
+    // Student must isolate that variable, then substitute
+    // Form A: aX + Y = c, dX + eY = f  (isolate Y from eq1)
+    for (let a = 2; a <= 5; a++) {
+      for (let d = 1; d <= 5; d++) {
+        for (let e = 2; e <= 4; e++) {
+          for (let x = 1; x <= 6; x++) {
+            for (let y = 1; y <= 6; y++) {
+              const c = a * x + y;
+              const f = d * x + e * y;
+              if (c > 30 || f > 30) continue;
+              pairs.push(sysP(`${cv(a, "X")} + Y = ${c}`, `${cv(d, "X")}${sterm(e, "Y")} = ${f}`, x, y, "sys-l3"));
+            }
           }
         }
       }
     }
-    // Elimination by addition: aX + Y = p, bX − Y = q
-    for (let a = 2; a <= 6; a++) {
-      for (let b = 1; b <= 5; b++) {
-        for (let x = 1; x <= 6; x++) {
-          for (let y = 1; y <= 8; y++) {
-            const q = b * x - y;
-            if (q <= 0) continue;
-            pairs.push(sysP(`${cv(a, "X")} + Y = ${a * x + y}`, `${cv(b, "X")} − Y = ${q}`, x, y, "sys-l3"));
-          }
-        }
-      }
-    }
-    // Elimination of X: X + aY = p, X + bY = q  (a ≠ b)
-    for (let a = 3; a <= 7; a++) {
-      for (let b = 1; b <= a - 1; b++) {
-        for (let x = 1; x <= 8; x++) {
-          for (let y = 1; y <= 6; y++) {
-            pairs.push(sysP(`X${sterm(a, "Y")} = ${x + a * y}`, `X${sterm(b, "Y")} = ${x + b * y}`, x, y, "sys-l3"));
+    // Form B: X + bY = c, dX + eY = f  (isolate X from eq1)
+    for (let b = 2; b <= 5; b++) {
+      for (let d = 2; d <= 5; d++) {
+        for (let e = 1; e <= 4; e++) {
+          for (let x = 1; x <= 6; x++) {
+            for (let y = 1; y <= 6; y++) {
+              const c = x + b * y;
+              const f = d * x + e * y;
+              if (c > 30 || f > 30) continue;
+              pairs.push(sysP(`X${sterm(b, "Y")} = ${c}`, `${cv(d, "X")}${sterm(e, "Y")} = ${f}`, x, y, "sys-l3"));
+            }
           }
         }
       }
@@ -160,22 +164,34 @@ export function buildSystemsQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
   }
 
   if (level === 4) {
-    // Multiply one equation to match coefficients, then eliminate
-    // k*(aX + bY) = k*p  then subtract from cX + bY = q
-    const configs: [number, number, number, number][] = [
-      [2, 1, 3, 1], [2, 1, 4, 1], [3, 1, 5, 1],
-      [2, 1, 3, 2], [3, 1, 4, 3], [2, 3, 4, 3],
-      [3, 2, 5, 2], [2, 5, 4, 5], [3, 4, 6, 4],
-    ];
-    for (const [a1, b1, a2, b2] of configs) {
-      for (let x = 1; x <= 8; x++) {
-        for (let y = 1; y <= 8; y++) {
-          const c1 = a1 * x + b1 * y;
-          const c2 = a2 * x + b2 * y;
-          if (c1 > 60 || c2 > 60) continue;
-          const eq1 = `${cv(a1, "X")}${sterm(b1, "Y")} = ${c1}`;
-          const eq2 = `${cv(a2, "X")}${sterm(b2, "Y")} = ${c2}`;
-          pairs.push(sysP(eq1, eq2, x, y, "sys-l4"));
+    // Fraction substitution: one equation has X/n or Y/n, student must multiply through
+    // Form A: X/n + Y = c, dX + eY = f  →  isolate X = n(c − Y), substitute
+    for (let n = 2; n <= 3; n++) {
+      for (let d = 1; d <= 4; d++) {
+        for (let e = 1; e <= 3; e++) {
+          for (let x = n; x <= 6 * n; x += n) { // x must be divisible by n
+            for (let y = 1; y <= 8; y++) {
+              const c = x / n + y;
+              const f = d * x + e * y;
+              if (c > 20 || f > 40) continue;
+              pairs.push(sysP(`X/${n} + Y = ${c}`, `${cv(d, "X")}${sterm(e, "Y")} = ${f}`, x, y, "sys-l4"));
+            }
+          }
+        }
+      }
+    }
+    // Form B: X + Y/n = c, dX + eY = f  →  isolate Y = n(c − X), substitute
+    for (let n = 2; n <= 3; n++) {
+      for (let d = 1; d <= 4; d++) {
+        for (let e = 1; e <= 3; e++) {
+          for (let x = 1; x <= 8; x++) {
+            for (let y = n; y <= 6 * n; y += n) { // y must be divisible by n
+              const c = x + y / n;
+              const f = d * x + e * y;
+              if (c > 20 || f > 40) continue;
+              pairs.push(sysP(`X + Y/${n} = ${c}`, `${cv(d, "X")}${sterm(e, "Y")} = ${f}`, x, y, "sys-l4"));
+            }
+          }
         }
       }
     }
