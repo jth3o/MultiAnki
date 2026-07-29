@@ -477,11 +477,15 @@ export default function App() {
     } else if (op === "eq") {
       const level = eqLevel(eqPoints);
       activeEqLevelRef.current = EQ_LEVEL_NAMES[level];
-      q = spliceBonus(buildEquationQueue(level), buildBonusEqQueue(), 0.15);
+      q = level === "review"
+        ? spliceBonus(buildEquationQueue(level), buildBonusEqQueue(), 0.15)
+        : buildEquationQueue(level);
     } else if (op === "sys") {
       const level = sysLevel(sysPoints);
       activeSysLevelRef.current = SYS_LEVEL_NAMES[level];
-      q = spliceBonus(buildSystemsQueue(level), buildBonusSysQueue(), 0.15);
+      q = level === "review"
+        ? spliceBonus(buildSystemsQueue(level), buildBonusSysQueue(), 0.15)
+        : buildSystemsQueue(level);
     } else if (op === "add") {
       const wMap = new Map<string, PairWeight>();
       for (const w of progress.add) wMap.set(`${Math.min(w.a,w.b)}x${Math.max(w.a,w.b)}`, w);
