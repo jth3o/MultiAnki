@@ -242,7 +242,7 @@ export default function App() {
       sysPointsRef.current = sysPts;
       totalCorrectRef.current = prog.totalCorrect;
       eggsOpenedRef.current = prog.eggsOpened;
-      setPendingEggs(Math.floor(prog.totalCorrect / 20) - prog.eggsOpened);
+      setPendingEggs(Math.floor(prog.totalCorrect / 10) - prog.eggsOpened);
       setCollection(coll);
       setPhase(done ? "lobby" : "initial-welcome");
       setAppReady(true);
@@ -335,7 +335,7 @@ export default function App() {
       addCorrectAnswers(student, correct + bonusPointsRef.current).then(({ totalCorrect, eggsOpened }) => {
         totalCorrectRef.current = totalCorrect;
         eggsOpenedRef.current = eggsOpened;
-        setPendingEggs(Math.floor(totalCorrect / 20) - eggsOpened);
+        setPendingEggs(Math.floor(totalCorrect / 10) - eggsOpened);
       });
     }
 
@@ -641,7 +641,7 @@ export default function App() {
         upsertEqPoints(studentName ?? "", newPts);
       }
       if (isSys(pair)) {
-        const newPts = Math.min(12, sysPointsRef.current + 1);
+        const newPts = Math.min(18, sysPointsRef.current + 1);
         sysPointsRef.current = newPts;
         setSysPoints(newPts);
         upsertSysPoints(studentName ?? "", newPts);
@@ -783,7 +783,7 @@ export default function App() {
       addCorrectAnswers(studentNameRef.current ?? "", backCorrect + bonusPointsRef.current).then(({ totalCorrect, eggsOpened }) => {
         totalCorrectRef.current = totalCorrect;
         eggsOpenedRef.current = eggsOpened;
-        setPendingEggs(Math.floor(totalCorrect / 20) - eggsOpened);
+        setPendingEggs(Math.floor(totalCorrect / 10) - eggsOpened);
       });
     }
     setSecondsLeft(null);
@@ -829,7 +829,7 @@ export default function App() {
     sysPointsRef.current = sysPts;
     totalCorrectRef.current = prog.totalCorrect;
     eggsOpenedRef.current = prog.eggsOpened;
-    setPendingEggs(Math.floor(prog.totalCorrect / 20) - prog.eggsOpened);
+    setPendingEggs(Math.floor(prog.totalCorrect / 10) - prog.eggsOpened);
     setCollection(coll);
     setAppReady(true);
     setPhase(done ? "lobby" : "initial-welcome");

@@ -14,7 +14,7 @@ export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g
 export type ConvOp = "conv-fd" | "conv-fp" | "conv-df" | "conv-dp" | "conv-pf" | "conv-pd";
 
 export type EqOp  = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6" | "eq-frac";
-export type SysOp = "sys-l1" | "sys-l2" | "sys-l3" | "sys-l4";
+export type SysOp = "sys-l1" | "sys-l2" | "sys-l3" | "sys-l4" | "sys-l5" | "sys-l6";
 
 export interface Pair {
   a: number;
@@ -35,19 +35,23 @@ export function isSys(pair: Partial<Pair>): boolean {
   return typeof pair.op === "string" && pair.op.startsWith("sys-");
 }
 
-export function sysLevel(points: number): 1 | 2 | 3 | 4 | "review" {
-  if (points >= 12) return "review";
+export function sysLevel(points: number): 1 | 2 | 3 | 4 | 5 | 6 | "review" {
+  if (points >= 18) return "review";
+  if (points >= 15) return 6;
+  if (points >= 12) return 5;
   if (points >= 9)  return 4;
   if (points >= 6)  return 3;
   if (points >= 3)  return 2;
   return 1;
 }
 
-export const SYS_LEVEL_NAMES: Record<1 | 2 | 3 | 4 | "review", string> = {
+export const SYS_LEVEL_NAMES: Record<1 | 2 | 3 | 4 | 5 | 6 | "review", string> = {
   1: "One Variable Given",
   2: "Substitution",
   3: "True Substitution",
   4: "Fraction Substitution",
+  5: "Elimination",
+  6: "Multiply & Eliminate",
   review: "Review",
 };
 
@@ -62,10 +66,12 @@ const sterm = (n: number, v: string) =>
 export function buildSystemsQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
   if (level === "review") {
     return shuffle([
-      ...buildSystemsQueue(1).slice(0, 6),
-      ...buildSystemsQueue(2).slice(0, 6),
-      ...buildSystemsQueue(3).slice(0, 6),
-      ...buildSystemsQueue(4).slice(0, 6),
+      ...buildSystemsQueue(1).slice(0, 5),
+      ...buildSystemsQueue(2).slice(0, 5),
+      ...buildSystemsQueue(3).slice(0, 5),
+      ...buildSystemsQueue(4).slice(0, 5),
+      ...buildSystemsQueue(5).slice(0, 5),
+      ...buildSystemsQueue(6).slice(0, 5),
     ]);
   }
 
@@ -192,6 +198,62 @@ export function buildSystemsQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
               pairs.push(sysP(`X + Y/${n} = ${c}`, `${cv(d, "X")}${sterm(e, "Y")} = ${f}`, x, y, "sys-l4"));
             }
           }
+        }
+      }
+    }
+  }
+
+  if (level === 5) {
+    // Elimination: aX + Y = p, bX + Y = q  (subtract to eliminate Y)
+    for (let a = 3; a <= 8; a++) {
+      for (let b = 1; b <= a - 1; b++) {
+        for (let x = 1; x <= 8; x++) {
+          for (let y = 1; y <= 8; y++) {
+            pairs.push(sysP(`${cv(a, "X")} + Y = ${a * x + y}`, `${cv(b, "X")} + Y = ${b * x + y}`, x, y, "sys-l5"));
+          }
+        }
+      }
+    }
+    // aX + Y = p, bX − Y = q  (add to eliminate Y)
+    for (let a = 2; a <= 6; a++) {
+      for (let b = 1; b <= 5; b++) {
+        for (let x = 1; x <= 6; x++) {
+          for (let y = 1; y <= 8; y++) {
+            const q = b * x - y;
+            if (q <= 0) continue;
+            pairs.push(sysP(`${cv(a, "X")} + Y = ${a * x + y}`, `${cv(b, "X")} − Y = ${q}`, x, y, "sys-l5"));
+          }
+        }
+      }
+    }
+    // X + aY = p, X + bY = q  (subtract to eliminate X)
+    for (let a = 3; a <= 7; a++) {
+      for (let b = 1; b <= a - 1; b++) {
+        for (let x = 1; x <= 8; x++) {
+          for (let y = 1; y <= 6; y++) {
+            pairs.push(sysP(`X${sterm(a, "Y")} = ${x + a * y}`, `X${sterm(b, "Y")} = ${x + b * y}`, x, y, "sys-l5"));
+          }
+        }
+      }
+    }
+  }
+
+  if (level === 6) {
+    // Multiply & eliminate: multiply one equation to match a coefficient, then eliminate
+    const configs: [number, number, number, number][] = [
+      [2, 1, 3, 1], [2, 1, 4, 1], [3, 1, 5, 1],
+      [2, 1, 3, 2], [3, 1, 4, 3], [2, 3, 4, 3],
+      [3, 2, 5, 2], [2, 5, 4, 5], [3, 4, 6, 4],
+    ];
+    for (const [a1, b1, a2, b2] of configs) {
+      for (let x = 1; x <= 8; x++) {
+        for (let y = 1; y <= 8; y++) {
+          const c1 = a1 * x + b1 * y;
+          const c2 = a2 * x + b2 * y;
+          if (c1 > 60 || c2 > 60) continue;
+          const eq1 = `${cv(a1, "X")}${sterm(b1, "Y")} = ${c1}`;
+          const eq2 = `${cv(a2, "X")}${sterm(b2, "Y")} = ${c2}`;
+          pairs.push(sysP(eq1, eq2, x, y, "sys-l6"));
         }
       }
     }
