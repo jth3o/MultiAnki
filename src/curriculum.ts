@@ -13,14 +13,15 @@ export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g
 //   f = fraction (a/b), d = decimal, p = percent
 export type ConvOp = "conv-fd" | "conv-fp" | "conv-df" | "conv-dp" | "conv-pf" | "conv-pd";
 
-export type EqOp  = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6" | "eq-frac";
-export type SysOp = "sys-l1" | "sys-l2" | "sys-l3" | "sys-l4" | "sys-l5" | "sys-l6";
+export type EqOp   = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6" | "eq-frac";
+export type SysOp  = "sys-l1" | "sys-l2" | "sys-l3" | "sys-l4" | "sys-l5" | "sys-l6";
+export type IneqOp = "ineq-l1" | "ineq-l2" | "ineq-l3" | "ineq-l4";
 
 export interface Pair {
   a: number;
   b: number;
-  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp/EqOp/SysOp = others
-  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp;
+  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp/EqOp/SysOp/IneqOp = others
+  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp | IneqOp;
   c?: number;       // triangle perimeter third side, OR abs value / sys second answer
   answer?: number;  // equation answer (x value, or first/larger solution for abs value, or sys X)
   eqStr?: string;   // display string; for sys: "eq1|eq2|xAns|yAns"
@@ -833,6 +834,146 @@ export function buildAdditionQueue(): Pair[] {
 }
 
 // ─── Bonus questions (double points, harder) ──────────────────────────────────
+
+export function isIneq(pair: Partial<Pair>): boolean {
+  return typeof pair.op === "string" && pair.op.startsWith("ineq-");
+}
+
+export function ineqLevel(points: number): 1 | 2 | 3 | 4 | "review" {
+  if (points >= 12) return "review";
+  if (points >= 9)  return 4;
+  if (points >= 6)  return 3;
+  if (points >= 3)  return 2;
+  return 1;
+}
+
+export const INEQ_LEVEL_NAMES: Record<1 | 2 | 3 | 4 | "review", string> = {
+  1: "One Step",
+  2: "Two Step",
+  3: "Variables on Both Sides",
+  4: "Negative Coefficient",
+  review: "Review",
+};
+
+const SYMS = [">", "<", "≥", "≤"] as const;
+type Sym = typeof SYMS[number];
+const flipSym = (s: Sym): Sym => s === ">" ? "<" : s === "<" ? ">" : s === "≥" ? "≤" : "≥";
+
+// eqStr format: "question|answer"  e.g. "X + 5 > 9|X > 4"
+function ineqP(question: string, answer: string, op: IneqOp): Pair {
+  return { a: 0, b: 0, op, eqStr: `${question}|${answer}` };
+}
+
+export function buildInequalityQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
+  if (level === "review") {
+    return shuffle([
+      ...buildInequalityQueue(1).slice(0, 5),
+      ...buildInequalityQueue(2).slice(0, 5),
+      ...buildInequalityQueue(3).slice(0, 5),
+      ...buildInequalityQueue(4).slice(0, 5),
+    ]);
+  }
+
+  const pairs: Pair[] = [];
+
+  if (level === 1) {
+    for (const sym of SYMS) {
+      // X + a OP b  →  X OP (b − a), keep answer positive
+      for (let a = 1; a <= 10; a++) {
+        for (let ans = 1; ans <= 10; ans++) {
+          const b = ans + a;
+          pairs.push(ineqP(`X + ${a} ${sym} ${b}`, `X ${sym} ${ans}`, "ineq-l1"));
+        }
+      }
+      // X − a OP b  →  X OP (b + a)
+      for (let a = 1; a <= 10; a++) {
+        for (let ans = 1; ans <= 10; ans++) {
+          const b = ans - a;
+          if (b <= 0) continue;
+          pairs.push(ineqP(`X − ${a} ${sym} ${b}`, `X ${sym} ${ans}`, "ineq-l1"));
+        }
+      }
+      // aX OP b  →  X OP b/a (whole number)
+      for (let a = 2; a <= 8; a++) {
+        for (let ans = 1; ans <= 10; ans++) {
+          pairs.push(ineqP(`${a}X ${sym} ${a * ans}`, `X ${sym} ${ans}`, "ineq-l1"));
+        }
+      }
+    }
+  }
+
+  if (level === 2) {
+    for (const sym of SYMS) {
+      // aX + b OP c  →  X OP (c − b) / a
+      for (let a = 2; a <= 6; a++) {
+        for (let b = 1; b <= 10; b++) {
+          for (let ans = 1; ans <= 10; ans++) {
+            const c = a * ans + b;
+            if (c > 40) continue;
+            pairs.push(ineqP(`${a}X + ${b} ${sym} ${c}`, `X ${sym} ${ans}`, "ineq-l2"));
+          }
+        }
+      }
+      // aX − b OP c  →  X OP (c + b) / a
+      for (let a = 2; a <= 6; a++) {
+        for (let b = 1; b <= 10; b++) {
+          for (let ans = 1; ans <= 10; ans++) {
+            const c = a * ans - b;
+            if (c <= 0 || c > 40) continue;
+            pairs.push(ineqP(`${a}X − ${b} ${sym} ${c}`, `X ${sym} ${ans}`, "ineq-l2"));
+          }
+        }
+      }
+    }
+  }
+
+  if (level === 3) {
+    for (const sym of SYMS) {
+      // aX + b OP cX + d  where a > c  →  X OP (d − b) / (a − c)
+      for (let a = 2; a <= 7; a++) {
+        for (let c = 1; c < a; c++) {
+          const den = a - c;
+          for (let b = 1; b <= 10; b++) {
+            for (let ans = 1; ans <= 10; ans++) {
+              const d = den * ans + b;
+              if (d <= 0 || d > 30) continue;
+              const lhs = `${a}X + ${b}`;
+              const rhs = c === 1 ? `X + ${d}` : `${c}X + ${d}`;
+              pairs.push(ineqP(`${lhs} ${sym} ${rhs}`, `X ${sym} ${ans}`, "ineq-l3"));
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (level === 4) {
+    for (const sym of SYMS) {
+      const flipped = flipSym(sym);
+      // −aX OP b  →  X flipped −b/a  (keep b divisible by a, answer positive)
+      for (let a = 1; a <= 6; a++) {
+        for (let ans = 1; ans <= 10; ans++) {
+          const b = a * ans;
+          const question = a === 1 ? `−X ${sym} ${b}` : `−${a}X ${sym} ${b}`;
+          pairs.push(ineqP(question, `X ${flipped} −${ans}`, "ineq-l4"));
+        }
+      }
+      // a − bX OP c  →  X flipped (a − c) / b  (a > c for positive answer)
+      for (let b = 1; b <= 6; b++) {
+        for (let base = 2; base <= 12; base++) {
+          for (let ans = 1; ans <= 8; ans++) {
+            const c = base - b * ans;
+            if (c <= 0 || c >= base) continue;
+            const coef = b === 1 ? "" : `${b}`;
+            pairs.push(ineqP(`${base} − ${coef}X ${sym} ${c}`, `X ${flipped} ${ans}`, "ineq-l4"));
+          }
+        }
+      }
+    }
+  }
+
+  return shuffle(pairs).slice(0, 15);
+}
 
 export function buildBonusEqQueue(): Pair[] {
   const pairs: Pair[] = [];

@@ -366,6 +366,30 @@ body {
   padding: 0.1rem 0.5rem;
 }
 
+.ineq-sym-row {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.btn-ineq-sym {
+  font-size: 1.25rem;
+  font-weight: 700;
+  padding: 0.35rem 0.9rem;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-ineq-sym:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
 .bonus-banner {
   text-align: center;
   font-size: 0.9rem;
