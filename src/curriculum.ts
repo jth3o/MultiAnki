@@ -64,7 +64,7 @@ const cv = (n: number, v: string) => (n === 1 ? v : `${n}${v}`);
 const sterm = (n: number, v: string) =>
   n === 1 ? ` + ${v}` : n === -1 ? ` − ${v}` : n > 0 ? ` + ${n}${v}` : ` − ${Math.abs(n)}${v}`;
 
-export function buildSystemsQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
+export function buildSystemsQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pair[] {
   if (level === "review") {
     return shuffle([
       ...buildSystemsQueue(1).slice(0, 5),
