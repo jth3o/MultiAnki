@@ -1058,16 +1058,15 @@ export function isWP(pair: Partial<Pair>): boolean {
   return pair.op === "wp-c" || pair.op === "wp-b";
 }
 
-export function wpLevel(points: number): 1 | 2 | 3 | 4 | "review" {
-  if (points >= 12) return "review";
-  if (points >= 9)  return 4;
-  if (points >= 6)  return 3;
-  if (points >= 3)  return 2;
-  return 1;
+export function wpLevel(points: number): 1 | 2 | 3 | "review" {
+  if (points >= 9) return "review";
+  if (points >= 4) return 3;   // B hard
+  if (points >= 2) return 2;   // B easy
+  return 1;                    // C — just 2 correct before switching to B
 }
 
-export const WP_LEVEL_NAMES: Record<1 | 2 | 3 | 4 | "review", string> = {
-  1: "Solve (Easy)", 2: "Solve (Hard)", 3: "Setup & Solve (Easy)", 4: "Setup & Solve (Hard)", review: "Review",
+export const WP_LEVEL_NAMES: Record<1 | 2 | 3 | "review", string> = {
+  1: "Solve", 2: "Setup & Solve (Easy)", 3: "Setup & Solve (Hard)", review: "Review",
 };
 
 // Evaluate a linear equation string with known x, y — returns true if both sides match
@@ -1135,18 +1134,17 @@ const WP_TEMPLATES: WPTemplate[] = [
   }),
 ];
 
-export function buildWordProblemQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
+export function buildWordProblemQueue(level: 1 | 2 | 3 | "review"): Pair[] {
   if (level === "review") {
     return shuffle([
       ...buildWordProblemQueue(1).slice(0, 5),
-      ...buildWordProblemQueue(2).slice(0, 5),
-      ...buildWordProblemQueue(3).slice(0, 5),
-      ...buildWordProblemQueue(4).slice(0, 5),
+      ...buildWordProblemQueue(2).slice(0, 8),
+      ...buildWordProblemQueue(3).slice(0, 7),
     ]);
   }
 
-  const op: WPOp = level <= 2 ? "wp-c" : "wp-b";
-  const isSimple = level === 1 || level === 3;
+  const op: WPOp = level === 1 ? "wp-c" : "wp-b";
+  const isSimple = level !== 3;
   const p1Vals = isSimple ? [2, 3, 4] : [4, 5, 6, 7, 8];
   const p2Vals = isSimple ? [1, 2] : [1, 2, 3];
   const qtyVals = isSimple ? [5, 8, 10, 12, 15] : [8, 10, 12, 15, 18, 20];
