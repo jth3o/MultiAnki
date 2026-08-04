@@ -16,12 +16,13 @@ export type ConvOp = "conv-fd" | "conv-fp" | "conv-df" | "conv-dp" | "conv-pf" |
 export type EqOp   = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6" | "eq-frac";
 export type SysOp  = "sys-l1" | "sys-l2" | "sys-l3" | "sys-l4" | "sys-l5" | "sys-l6";
 export type IneqOp = "ineq-l1" | "ineq-l2" | "ineq-l3" | "ineq-l4";
+export type WPOp   = "wp-c" | "wp-b";
 
 export interface Pair {
   a: number;
   b: number;
   // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp/EqOp/SysOp/IneqOp = others
-  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp | IneqOp;
+  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp | IneqOp | WPOp;
   c?: number;       // triangle perimeter third side, OR abs value / sys second answer
   answer?: number;  // equation answer (x value, or first/larger solution for abs value, or sys X)
   eqStr?: string;   // display string; for sys: "eq1|eq2|xAns|yAns"
@@ -1046,6 +1047,126 @@ export function buildBonusSysQueue(): Pair[] {
   }
 
   return shuffle(pairs).slice(0, 8);
+}
+
+// ─── Word Problems ────────────────────────────────────────────────────────────
+// eqStr format: "problem~~eq1~~eq2~~x~~y~~xLabel~~yLabel"
+// wp-c: equations shown, student just solves
+// wp-b: student writes equations first, then solves
+
+export function isWP(pair: Partial<Pair>): boolean {
+  return pair.op === "wp-c" || pair.op === "wp-b";
+}
+
+export function wpLevel(points: number): 1 | 2 | 3 | 4 | "review" {
+  if (points >= 12) return "review";
+  if (points >= 9)  return 4;
+  if (points >= 6)  return 3;
+  if (points >= 3)  return 2;
+  return 1;
+}
+
+export const WP_LEVEL_NAMES: Record<1 | 2 | 3 | 4 | "review", string> = {
+  1: "Solve (Easy)", 2: "Solve (Hard)", 3: "Setup & Solve (Easy)", 4: "Setup & Solve (Hard)", review: "Review",
+};
+
+// Evaluate a linear equation string with known x, y — returns true if both sides match
+export function evalEquation(eqInput: string, x: number, y: number): boolean {
+  const s = eqInput.trim().replace(/\s+/g, "").toUpperCase();
+  const idx = s.indexOf("=");
+  if (idx < 0) return false;
+  try {
+    return Math.abs(evalLinearExpr(s.slice(0, idx), x, y) - evalLinearExpr(s.slice(idx + 1), x, y)) < 0.01;
+  } catch { return false; }
+}
+
+function evalLinearExpr(expr: string, x: number, y: number): number {
+  let e = expr
+    .replace(/(\d+)X/g, (_, c) => String(Number(c) * x))
+    .replace(/(?<!\d)X/g, String(x))
+    .replace(/(\d+)Y/g, (_, c) => String(Number(c) * y))
+    .replace(/(?<!\d)Y/g, String(y));
+  const tokens = e.match(/[+-]?\d+(\.\d+)?/g) ?? [];
+  return tokens.reduce((sum, t) => sum + Number(t), 0);
+}
+
+interface WPData {
+  problem: string; eq1: string; eq2: string;
+  x: number; y: number; xLabel: string; yLabel: string;
+}
+
+function wpPair(data: WPData, op: WPOp): Pair {
+  const { problem, eq1, eq2, x, y, xLabel, yLabel } = data;
+  return { a: x, b: y, op, answer: x, c: y, eqStr: [problem, eq1, eq2, String(x), String(y), xLabel, yLabel].join("~~") };
+}
+
+type WPTemplate = (p1: number, p2: number, x: number, y: number) => WPData;
+
+const WP_TEMPLATES: WPTemplate[] = [
+  (p1, p2, x, y) => ({
+    problem: `Tickets to a school play cost $${p1} for adults and $${p2} for students. ${x+y} tickets were sold for $${p1*x+p2*y} total. How many adult and student tickets were sold?`,
+    eq1: `X + Y = ${x + y}`, eq2: `${p1}X + ${p2}Y = ${p1*x + p2*y}`,
+    x, y, xLabel: "adult tickets (X)", yLabel: "student tickets (Y)",
+  }),
+  (p1, p2, x, y) => ({
+    problem: `A store sells pens for $${p1} each and notebooks for $${p2} each. A class bought ${x+y} items and spent $${p1*x+p2*y}. How many pens and notebooks were bought?`,
+    eq1: `X + Y = ${x + y}`, eq2: `${p1}X + ${p2}Y = ${p1*x + p2*y}`,
+    x, y, xLabel: "pens (X)", yLabel: "notebooks (Y)",
+  }),
+  (p1, p2, x, y) => ({
+    problem: `Apples cost $${p1} each and oranges cost $${p2} each. A family bought ${x+y} pieces of fruit and paid $${p1*x+p2*y}. How many apples and oranges did they buy?`,
+    eq1: `X + Y = ${x + y}`, eq2: `${p1}X + ${p2}Y = ${p1*x + p2*y}`,
+    x, y, xLabel: "apples (X)", yLabel: "oranges (Y)",
+  }),
+  (p1, p2, x, y) => ({
+    problem: `A bakery charges $${p1} for muffins and $${p2} for cookies. A customer bought ${x+y} items for $${p1*x+p2*y}. How many muffins and cookies were purchased?`,
+    eq1: `X + Y = ${x + y}`, eq2: `${p1}X + ${p2}Y = ${p1*x + p2*y}`,
+    x, y, xLabel: "muffins (X)", yLabel: "cookies (Y)",
+  }),
+  (p1, p2, x, y) => ({
+    problem: `VIP passes cost $${p1} and general passes cost $${p2} at a festival. ${x+y} passes were sold for $${p1*x+p2*y}. How many VIP and general passes were sold?`,
+    eq1: `X + Y = ${x + y}`, eq2: `${p1}X + ${p2}Y = ${p1*x + p2*y}`,
+    x, y, xLabel: "VIP passes (X)", yLabel: "general passes (Y)",
+  }),
+  (p1, p2, x, y) => ({
+    problem: `A café sells lattes for $${p1} and teas for $${p2}. On Monday, ${x+y} drinks were sold for $${p1*x+p2*y}. How many lattes and teas were sold?`,
+    eq1: `X + Y = ${x + y}`, eq2: `${p1}X + ${p2}Y = ${p1*x + p2*y}`,
+    x, y, xLabel: "lattes (X)", yLabel: "teas (Y)",
+  }),
+];
+
+export function buildWordProblemQueue(level: 1 | 2 | 3 | 4 | "review"): Pair[] {
+  if (level === "review") {
+    return shuffle([
+      ...buildWordProblemQueue(1).slice(0, 5),
+      ...buildWordProblemQueue(2).slice(0, 5),
+      ...buildWordProblemQueue(3).slice(0, 5),
+      ...buildWordProblemQueue(4).slice(0, 5),
+    ]);
+  }
+
+  const op: WPOp = level <= 2 ? "wp-c" : "wp-b";
+  const isSimple = level === 1 || level === 3;
+  const p1Vals = isSimple ? [2, 3, 4] : [4, 5, 6, 7, 8];
+  const p2Vals = isSimple ? [1, 2] : [1, 2, 3];
+  const qtyVals = isSimple ? [5, 8, 10, 12, 15] : [8, 10, 12, 15, 18, 20];
+
+  const pairs: Pair[] = [];
+  for (const template of WP_TEMPLATES) {
+    for (const p1 of p1Vals) {
+      for (const p2 of p2Vals) {
+        if (p2 >= p1) continue;
+        for (const x of qtyVals) {
+          for (const y of qtyVals) {
+            if (p1 * x + p2 * y > 200) continue;
+            pairs.push(wpPair(template(p1, p2, x, y), op));
+          }
+        }
+      }
+    }
+  }
+
+  return shuffle(pairs).slice(0, 15);
 }
 
 export function shuffle<T>(arr: T[]): T[] {
