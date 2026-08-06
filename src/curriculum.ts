@@ -17,12 +17,13 @@ export type EqOp   = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6" |
 export type SysOp  = "sys-l1" | "sys-l2" | "sys-l3" | "sys-l4" | "sys-l5" | "sys-l6";
 export type IneqOp = "ineq-l1" | "ineq-l2" | "ineq-l3" | "ineq-l4";
 export type WPOp   = "wp-c" | "wp-b";
+export type FactOp = "fact-l1" | "fact-l2" | "fact-l3" | "fact-l4" | "fact-l5";
 
 export interface Pair {
   a: number;
   b: number;
-  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp/EqOp/SysOp/IneqOp = others
-  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp | IneqOp | WPOp;
+  // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp/EqOp/SysOp/IneqOp/FactOp = others
+  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp | IneqOp | WPOp | FactOp;
   c?: number;       // triangle perimeter third side, OR abs value / sys second answer
   answer?: number;  // equation answer (x value, or first/larger solution for abs value, or sys X)
   eqStr?: string;   // display string; for sys: "eq1|eq2|xAns|yAns"
@@ -1165,6 +1166,145 @@ export function buildWordProblemQueue(level: 1 | 2 | 3 | "review"): Pair[] {
   }
 
   return shuffle(pairs).slice(0, 15);
+}
+
+// ─── Factoring ────────────────────────────────────────────────────────────────
+
+export function isFact(pair: Partial<Pair>): boolean {
+  return typeof pair.op === "string" && pair.op.startsWith("fact-");
+}
+
+export function factLevel(points: number): 1 | 2 | 3 | 4 | 5 | "review" {
+  if (points >= 12) return "review";
+  if (points >= 8)  return 3;
+  if (points >= 4)  return 2;
+  return 1;
+}
+
+export const FACT_LEVEL_NAMES: Record<1 | 2 | 3 | 4 | 5 | "review", string> = {
+  1: "GCF",
+  2: "Easy Trinomials",
+  3: "Mixed Signs",
+  4: "Difference of Squares",
+  5: "Leading Coefficient",
+  review: "Review",
+};
+
+function gcd(a: number, b: number): number {
+  while (b) { [a, b] = [b, a % b]; }
+  return Math.abs(a);
+}
+
+function factP(question: string, answers: string[], op: FactOp): Pair {
+  return { a: 0, b: 0, op, eqStr: [question, ...answers].join("|") };
+}
+
+export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[] {
+  if (level === "review") {
+    return shuffle([
+      ...buildFactoringQueue(1).slice(0, 6),
+      ...buildFactoringQueue(2).slice(0, 6),
+      ...buildFactoringQueue(3).slice(0, 6),
+    ]);
+  }
+
+  const pairs: Pair[] = [];
+
+  if (level === 1) {
+    // GCF: factor g*(ax + b) where g >= 2, gcd(a,b) = 1
+    for (const g of [2, 3, 4, 5, 6]) {
+      for (let ai = 1; ai <= 6; ai++) {
+        for (let bi = 1; bi <= 6; bi++) {
+          if (gcd(ai, bi) !== 1) continue;
+          const a = g * ai, b = g * bi;
+          const inner = ai === 1 ? `x + ${bi}` : `${ai}x + ${bi}`;
+          const answer = `${g}(${inner})`;
+          pairs.push(factP(`${a}x + ${b}`, [answer], "fact-l1"));
+        }
+      }
+    }
+  }
+
+  if (level === 2) {
+    // Monic trinomials, both roots positive: x² + (p+q)x + pq = (x+p)(x+q)
+    for (let p = 1; p <= 9; p++) {
+      for (let q = p; q <= 9; q++) {
+        const b = p + q, c = p * q;
+        const question = `x² + ${b}x + ${c}`;
+        if (p === q) {
+          pairs.push(factP(question, [`(x+${p})²`, `(x+${p})(x+${p})`], "fact-l2"));
+        } else {
+          pairs.push(factP(question, [`(x+${p})(x+${q})`, `(x+${q})(x+${p})`], "fact-l2"));
+        }
+      }
+    }
+  }
+
+  if (level === 3) {
+    // One negative root: x² + (p-q)x - pq = (x+p)(x-q), p ≠ q, p,q > 0
+    for (let p = 1; p <= 8; p++) {
+      for (let q = 1; q <= 8; q++) {
+        if (p === q) continue;
+        const b = p - q;
+        const bStr = b === 0 ? "" : b > 0 ? ` + ${b}x` : ` - ${Math.abs(b)}x`;
+        const cStr = ` - ${p * q}`;
+        const question = `x²${bStr}${cStr}`;
+        pairs.push(factP(question, [`(x+${p})(x-${q})`, `(x-${q})(x+${p})`], "fact-l3"));
+      }
+    }
+    // Both roots negative: x² - (p+q)x + pq = (x-p)(x-q)
+    for (let p = 1; p <= 8; p++) {
+      for (let q = p; q <= 8; q++) {
+        const b = p + q, c = p * q;
+        const question = `x² - ${b}x + ${c}`;
+        if (p === q) {
+          pairs.push(factP(question, [`(x-${p})²`, `(x-${p})(x-${p})`], "fact-l3"));
+        } else {
+          pairs.push(factP(question, [`(x-${p})(x-${q})`, `(x-${q})(x-${p})`], "fact-l3"));
+        }
+      }
+    }
+  }
+
+  if (level === 4) {
+    // Difference of squares: x² - n² = (x+n)(x-n)
+    for (let n = 1; n <= 12; n++) {
+      const question = `x² - ${n * n}`;
+      pairs.push(factP(question, [`(x+${n})(x-${n})`, `(x-${n})(x+${n})`], "fact-l4"));
+    }
+  }
+
+  if (level === 5) {
+    // Leading coefficient > 1: (ax+b)(cx+d) where a*c > 1, all positive roots
+    // Generate from factors so we know the answer precisely
+    const leadingCoeffs = [2, 3];
+    for (const a of leadingCoeffs) {
+      for (const c of [1, 2, 3]) {
+        if (a === 1 && c === 1) continue; // would be monic
+        for (let b = 1; b <= 5; b++) {
+          for (let d = 1; d <= 5; d++) {
+            if (gcd(a, b) !== 1) continue; // factor already pullable
+            if (gcd(c, d) !== 1) continue;
+            const A = a * c;
+            const B = a * d + b * c;
+            const C = b * d;
+            // Build display string
+            const Bstr = B === 0 ? "" : ` + ${B}x`;
+            const Cstr = ` + ${C}`;
+            const question = A === 1 ? `x²${Bstr}${Cstr}` : `${A}x²${Bstr}${Cstr}`;
+            // Build answer strings — both orderings
+            const f1 = a === 1 ? `(x+${b})` : `(${a}x+${b})`;
+            const f2 = c === 1 ? `(x+${d})` : `(${c}x+${d})`;
+            const ans1 = `${f1}${f2}`, ans2 = `${f2}${f1}`;
+            const answers = ans1 === ans2 ? [ans1] : [ans1, ans2];
+            pairs.push(factP(question, answers, "fact-l5"));
+          }
+        }
+      }
+    }
+  }
+
+  return shuffle(pairs);
 }
 
 export function shuffle<T>(arr: T[]): T[] {
