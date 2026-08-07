@@ -751,7 +751,7 @@ export default function App() {
         upsertWPPoints(studentName ?? "", newPts);
       }
       if (isFact(pair)) {
-        const newPts = Math.min(20, factPointsRef.current + 1);
+        const newPts = Math.min(16, factPointsRef.current + 1);
         factPointsRef.current = newPts;
         setFactPoints(newPts);
         upsertFactPoints(studentName ?? "", newPts);

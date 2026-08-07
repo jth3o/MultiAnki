@@ -1175,9 +1175,8 @@ export function isFact(pair: Partial<Pair>): boolean {
 }
 
 export function factLevel(points: number): 1 | 2 | 3 | 4 | 5 | "review" {
-  if (points >= 20) return "review";
-  if (points >= 16) return 5;
-  if (points >= 12) return 4;
+  if (points >= 16) return "review";
+  if (points >= 12) return 5;
   if (points >= 8)  return 3;
   if (points >= 4)  return 2;
   return 1;
@@ -1238,11 +1237,10 @@ function monicAcHint(B: number, C: number, m: number, n: number, canonical: stri
 export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[] {
   if (level === "review") {
     return shuffle([
-      ...buildFactoringQueue(1).slice(0, 4),
-      ...buildFactoringQueue(2).slice(0, 4),
-      ...buildFactoringQueue(3).slice(0, 4),
-      ...buildFactoringQueue(4).slice(0, 4),
-      ...buildFactoringQueue(5).slice(0, 4),
+      ...buildFactoringQueue(1).slice(0, 5),
+      ...buildFactoringQueue(2).slice(0, 5),
+      ...buildFactoringQueue(3).slice(0, 5),
+      ...buildFactoringQueue(5).slice(0, 5),
     ]);
   }
 
