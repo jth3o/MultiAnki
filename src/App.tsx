@@ -1397,11 +1397,13 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
   const [wpStep, setWpStep]         = useState<"equations" | "solve">("equations");
   const [wpEqInput, setWpEqInput]   = useState("");
   const [wpEqError, setWpEqError]   = useState(false);
+  const [showAcMethod, setShowAcMethod] = useState(false);
 
   useEffect(() => {
     setWpStep("equations");
     setWpEqInput("");
     setWpEqError(false);
+    setShowAcMethod(false);
   }, [pair.eqStr]);
 
   const isDiv  = pair.op === "div";
@@ -1514,7 +1516,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
             );
           })() : isFact(pair) ? (
             <div className="conv-question">
-              <p className="conv-given">Factor: {pair.eqStr!.split("|")[0]}</p>
+              <p className="conv-given">Factor: {pair.eqStr!.split("|")[0].split("~~")[0]}</p>
               <p className="conv-hint">Type the factored form (e.g. 3(2x+1))</p>
             </div>
           ) : isIneq(pair) ? (
@@ -1600,12 +1602,41 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
                   <p className="conv-given">X = <strong>{xStr}</strong>, Y = <strong>{yStr}</strong></p>
                 </div>
               );
-            })() : isFact(pair) ? (
-              <div className="conv-question">
-                <p className="conv-given">Factor: {pair.eqStr!.split("|")[0]}</p>
-                <p className="conv-given">= <strong>{feedback.answerText}</strong></p>
-              </div>
-            ) : isIneq(pair) ? (
+            })() : isFact(pair) ? (() => {
+              const [questionPart] = pair.eqStr!.split("|");
+              const parts = questionPart.split("~~");
+              const displayQ = parts[0];
+              const hint1    = parts[1] ?? "";
+              const hint2    = parts[2];  // AC method — may be undefined
+              const activeHint = (hint2 && showAcMethod) ? hint2 : hint1;
+              const steps = activeHint ? activeHint.split("\n") : [];
+              return (
+                <div className="conv-question fact-feedback">
+                  <p className="conv-given">Factor: {displayQ}</p>
+                  {!feedback.correct && input.trim() && (
+                    <p className="fact-your-answer">You wrote: <span>{input.trim()}</span></p>
+                  )}
+                  {hint2 && (
+                    <div className="fact-method-toggle">
+                      <button
+                        className={`btn-method${!showAcMethod ? " active" : ""}`}
+                        onClick={() => setShowAcMethod(false)}
+                      >Direct</button>
+                      <button
+                        className={`btn-method${showAcMethod ? " active" : ""}`}
+                        onClick={() => setShowAcMethod(true)}
+                      >Grouping (AC)</button>
+                    </div>
+                  )}
+                  {steps.length > 0 && (
+                    <ol className="fact-steps">
+                      {steps.map((s, i) => <li key={i}>{s}</li>)}
+                    </ol>
+                  )}
+                  <p className="conv-given">Answer: <strong>{feedback.answerText}</strong></p>
+                </div>
+              );
+            })() : isIneq(pair) ? (
               <div className="conv-question">
                 <p className="conv-given">{pair.eqStr!.split("|")[0]}</p>
                 <p className="conv-given"><strong>{feedback.answerText}</strong></p>

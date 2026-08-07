@@ -1195,8 +1195,42 @@ function gcd(a: number, b: number): number {
   return Math.abs(a);
 }
 
-function factP(question: string, answers: string[], op: FactOp): Pair {
-  return { a: 0, b: 0, op, eqStr: [question, ...answers].join("|") };
+function factP(question: string, answers: string[], op: FactOp, hint: string, acHint?: string): Pair {
+  const hintPart = acHint ? `${hint}~~${acHint}` : hint;
+  return { a: 0, b: 0, op, eqStr: [`${question}~~${hintPart}`, ...answers].join("|") };
+}
+
+// Builds the AC-grouping method steps for a monic trinomial (a=1).
+// m and n are the two factor values (may be negative); canonical is the final answer.
+function monicAcHint(B: number, C: number, m: number, n: number, canonical: string): string {
+  const s = (v: number) => v < 0 ? `(${v})` : `${v}`;
+  const term = (v: number, isFirst = false) =>
+    v === 0 ? "" :
+    v === 1  ? (isFirst ? "x"   : "+ x")   :
+    v === -1 ? (isFirst ? "−x"  : "− x")   :
+    v > 0    ? (isFirst ? `${v}x` : `+ ${v}x`) :
+               (isFirst ? `−${Math.abs(v)}x` : `− ${Math.abs(v)}x`);
+  const cTerm = (v: number) => v > 0 ? `+ ${v}` : `− ${Math.abs(v)}`;
+
+  // Line 3: rewritten   e.g.  x² + 2x + 3x + 6
+  const rewritten = `x² ${term(m)} ${term(n)} ${cTerm(C)}`;
+  // Line 4: grouped     e.g.  (x² + 2x) + (3x + 6)
+  const g2open  = n < 0 ? "− (" : "+ (";
+  const g2inner = `${term(Math.abs(n), true)}x ${cTerm(Math.abs(C))}`;
+  // factor from group 1: x(x + m)
+  const g1bi    = m >= 0 ? `x + ${m}` : `x − ${Math.abs(m)}`;
+  // factor from group 2: n*(x + m)  [n may be negative]
+  const g2coeff = Math.abs(n) === 1 ? "" : `${Math.abs(n)}`;
+  const g2sign  = n < 0 ? "−" : "+";
+
+  return [
+    `Multiply a × c:  1 × ${C} = ${C}`,
+    `Find factors of ${C} that add to ${B}:  ${s(m)} × ${s(n)} = ${C},  ${m} + ${n} = ${B}`,
+    `Split the middle term:  ${rewritten}`,
+    `Group first two, last two:  (x² ${term(m)}) ${g2open}${g2inner})`,
+    `Factor each group:  x(${g1bi}) ${g2sign} ${g2coeff}(${g1bi})`,
+    `Factor out (${g1bi}):  ${canonical}`,
+  ].join("\n");
 }
 
 export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[] {
@@ -1219,7 +1253,13 @@ export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[]
           const a = g * ai, b = g * bi;
           const inner = ai === 1 ? `x + ${bi}` : `${ai}x + ${bi}`;
           const answer = `${g}(${inner})`;
-          pairs.push(factP(`${a}x + ${b}`, [answer], "fact-l1"));
+          const aiStr = ai === 1 ? "x" : `${ai}x`;
+          const hint = [
+            `Find the GCF of ${a} and ${b}  →  GCF = ${g}`,
+            `Divide each term by ${g}:  ${a}x ÷ ${g} = ${aiStr},  ${b} ÷ ${g} = ${bi}`,
+            `Write the answer:  ${answer}`,
+          ].join("\n");
+          pairs.push(factP(`${a}x + ${b}`, [answer], "fact-l1", hint));
         }
       }
     }
@@ -1231,11 +1271,17 @@ export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[]
       for (let q = p; q <= 9; q++) {
         const b = p + q, c = p * q;
         const question = `x² + ${b}x + ${c}`;
-        if (p === q) {
-          pairs.push(factP(question, [`(x+${p})²`, `(x+${p})(x+${p})`], "fact-l2"));
-        } else {
-          pairs.push(factP(question, [`(x+${p})(x+${q})`, `(x+${q})(x+${p})`], "fact-l2"));
-        }
+        const canonical = p === q ? `(x+${p})²` : `(x+${p})(x+${q})`;
+        const answers = p === q
+          ? [`(x+${p})²`, `(x+${p})(x+${p})`]
+          : [`(x+${p})(x+${q})`, `(x+${q})(x+${p})`];
+        const hint = [
+          `Find two numbers that multiply to ${c} and add to ${b}`,
+          `${p} × ${q} = ${c}  and  ${p} + ${q} = ${b}  ✓`,
+          `Write the answer:  ${canonical}`,
+        ].join("\n");
+        const ac = monicAcHint(b, c, p, q, canonical);
+        pairs.push(factP(question, answers, "fact-l2", hint, ac));
       }
     }
   }
@@ -1249,7 +1295,14 @@ export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[]
         const bStr = b === 0 ? "" : b > 0 ? ` + ${b}x` : ` - ${Math.abs(b)}x`;
         const cStr = ` - ${p * q}`;
         const question = `x²${bStr}${cStr}`;
-        pairs.push(factP(question, [`(x+${p})(x-${q})`, `(x-${q})(x+${p})`], "fact-l3"));
+        const C = -(p * q);
+        const hint = [
+          `Find two numbers that multiply to ${C} and add to ${b}`,
+          `${p} × ${-q} = ${C}  and  ${p} + (−${q}) = ${b}  ✓`,
+          `Write the answer:  (x+${p})(x−${q})`,
+        ].join("\n");
+        const ac = monicAcHint(b, C, p, -q, `(x+${p})(x-${q})`);
+        pairs.push(factP(question, [`(x+${p})(x-${q})`, `(x-${q})(x+${p})`], "fact-l3", hint, ac));
       }
     }
     // Both roots negative: x² - (p+q)x + pq = (x-p)(x-q)
@@ -1257,11 +1310,18 @@ export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[]
       for (let q = p; q <= 8; q++) {
         const b = p + q, c = p * q;
         const question = `x² - ${b}x + ${c}`;
-        if (p === q) {
-          pairs.push(factP(question, [`(x-${p})²`, `(x-${p})(x-${p})`], "fact-l3"));
-        } else {
-          pairs.push(factP(question, [`(x-${p})(x-${q})`, `(x-${q})(x-${p})`], "fact-l3"));
-        }
+        const canonical = p === q ? `(x-${p})²` : `(x-${p})(x-${q})`;
+        const answers = p === q
+          ? [`(x-${p})²`, `(x-${p})(x-${p})`]
+          : [`(x-${p})(x-${q})`, `(x-${q})(x-${p})`];
+        const bNeg = -(p + q);
+        const hint = [
+          `Find two numbers that multiply to ${c} and add to −${b}`,
+          `(−${p}) × (−${q}) = ${c}  and  (−${p}) + (−${q}) = −${b}  ✓`,
+          `Write the answer:  ${canonical}`,
+        ].join("\n");
+        const ac = monicAcHint(bNeg, c, -p, -q, canonical);
+        pairs.push(factP(question, answers, "fact-l3", hint, ac));
       }
     }
   }
@@ -1270,7 +1330,12 @@ export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[]
     // Difference of squares: x² - n² = (x+n)(x-n)
     for (let n = 1; n <= 12; n++) {
       const question = `x² - ${n * n}`;
-      pairs.push(factP(question, [`(x+${n})(x-${n})`, `(x-${n})(x+${n})`], "fact-l4"));
+      const hint = [
+        `Recognize the pattern: a² − b² = (a+b)(a−b)`,
+        `Here: x² − ${n}²  →  a = x,  b = ${n}`,
+        `Write the answer:  (x+${n})(x−${n})`,
+      ].join("\n");
+      pairs.push(factP(question, [`(x+${n})(x-${n})`, `(x-${n})(x+${n})`], "fact-l4", hint));
     }
   }
 
@@ -1297,7 +1362,12 @@ export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[]
             const f2 = c === 1 ? `(x+${d})` : `(${c}x+${d})`;
             const ans1 = `${f1}${f2}`, ans2 = `${f2}${f1}`;
             const answers = ans1 === ans2 ? [ans1] : [ans1, ans2];
-            pairs.push(factP(question, answers, "fact-l5"));
+            const hint = [
+              `Find factors of ${A} (leading) and ${C} (constant) that combine to give ${B}x`,
+              `Try (${a === 1 ? "" : a}x + ${b})(${c === 1 ? "" : c}x + ${d}):  outer = ${a}·${d} = ${a*d},  inner = ${b}·${c} = ${b*c},  sum = ${B}  ✓`,
+              `Write the answer:  ${ans1}`,
+            ].join("\n");
+            pairs.push(factP(question, answers, "fact-l5", hint));
           }
         }
       }

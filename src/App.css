@@ -966,3 +966,49 @@ body {
   margin: 0;
   text-align: center;
 }
+
+.fact-your-answer {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0.25rem 0 0.5rem;
+}
+.fact-your-answer span {
+  font-family: monospace;
+  color: #ef4444;
+}
+
+.fact-steps {
+  text-align: left;
+  margin: 0.5rem auto 0.75rem;
+  padding-left: 1.25rem;
+  max-width: 28rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.fact-steps li {
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.fact-method-toggle {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin: 0.5rem 0;
+}
+.btn-method {
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-method.active {
+  background: var(--accent);
+  color: #fff;
+}
