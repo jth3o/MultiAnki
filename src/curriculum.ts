@@ -1201,6 +1201,26 @@ function factP(question: string, answers: string[], op: FactOp, hint: string, ac
   return { a: 0, b: 0, op, eqStr: [`${question}~~${hintPart}`, ...answers].join("|") };
 }
 
+// Builds the AC-grouping method steps for a non-monic trinomial (ax+b)(cx+d).
+// Uses the split m=a*d, n=b*c so group 1 → ax(cx+d) and group 2 → b(cx+d).
+function leadingAcHint(a: number, b: number, c: number, d: number, canonical: string): string {
+  const A = a * c, C = b * d, B = a * d + b * c;
+  const m = a * d, n = b * c;
+  const Astr = `${A}x²`;
+  const mTerm = m === 1 ? "x" : `${m}x`;
+  const nTerm = n === 1 ? "x" : `${n}x`;
+  const g1 = a === 1 ? `x(${c}x + ${d})` : `${a}x(${c}x + ${d})`;
+  const g2 = b === 1 ? `(${c}x + ${d})` : `${b}(${c}x + ${d})`;
+  return [
+    `Multiply a × c:  ${A} × ${C} = ${A * C}`,
+    `Find factors of ${A * C} that add to ${B}:  ${m} × ${n} = ${A * C},  ${m} + ${n} = ${B}`,
+    `Split the middle term:  ${Astr} + ${mTerm} + ${nTerm} + ${C}`,
+    `Group first two, last two:  (${Astr} + ${mTerm}) + (${nTerm} + ${C})`,
+    `Factor each group:  ${g1} + ${g2}`,
+    `Factor out (${c}x + ${d}):  ${canonical}`,
+  ].join("\n");
+}
+
 // Builds the AC-grouping method steps for a monic trinomial (a=1).
 // m and n are the two factor values (may be negative); canonical is the final answer.
 function monicAcHint(B: number, C: number, m: number, n: number, canonical: string): string {
@@ -1369,7 +1389,8 @@ export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[]
               `Try (${a === 1 ? "" : a}x + ${b})(${c === 1 ? "" : c}x + ${d}):  outer = ${a}·${d} = ${a*d},  inner = ${b}·${c} = ${b*c},  sum = ${B}  ✓`,
               `Write the answer:  ${ans1}`,
             ].join("\n");
-            pairs.push(factP(question, answers, "fact-l5", hint));
+            const acH = leadingAcHint(a, b, c, d, ans1);
+            pairs.push(factP(question, answers, "fact-l5", hint, acH));
           }
         }
       }
