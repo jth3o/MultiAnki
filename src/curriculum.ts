@@ -23,7 +23,7 @@ export interface Pair {
   a: number;
   b: number;
   // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp/EqOp/SysOp/IneqOp/FactOp = others
-  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp | IneqOp | WPOp | FactOp | QFOp;
+  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp | IneqOp | WPOp | FactOp | QFOp | LinesOp;
   c?: number;       // triangle perimeter third side, OR abs value / sys second answer
   answer?: number;  // equation answer (x value, or first/larger solution for abs value, or sys X)
   eqStr?: string;   // display string; for sys: "eq1|eq2|xAns|yAns"
@@ -1502,6 +1502,117 @@ export function buildQFQueue(level: 1 | 2 | 3 | "review"): Pair[] {
   }
 
   return shuffle(pairs);
+}
+
+// ─── Lines ────────────────────────────────────────────────────────────────────
+
+export type LinesOp = "lines-l1" | "lines-l2";
+
+export function isLines(pair: Partial<Pair>): boolean {
+  return typeof pair.op === "string" && pair.op.startsWith("lines-");
+}
+
+export function linesLevel(points: number): 1 | 2 | "review" {
+  if (points >= 8) return "review";
+  if (points >= 4) return 2;
+  return 1;
+}
+
+export const LINES_LEVEL_NAMES: Record<1 | 2 | "review", string> = {
+  1: "Slope from Two Points",
+  2: "Equation from Two Points",
+  review: "Review",
+};
+
+function linesP(question: string, hint: string, answers: string[], op: LinesOp): Pair {
+  return { a: 0, b: 0, op, eqStr: [`${question}~~${hint}`, ...answers].join("|") };
+}
+
+function slopeHint(x1: number, y1: number, x2: number, y2: number, m: number): string {
+  const dy = y2 - y1, dx = x2 - x1;
+  return [
+    `Slope formula:  m = (y₂ − y₁) / (x₂ − x₁)`,
+    `m = (${y2} − ${y1}) / (${x2} − ${x1}) = ${dy} / ${dx} = ${m}`,
+  ].join("\n");
+}
+
+function lineEqCanonical(m: number, b: number): string {
+  const mPart = m === 1 ? "x" : m === -1 ? "-x" : `${m}x`;
+  if (b === 0) return `y=${mPart}`;
+  if (b > 0) return `y=${mPart}+${b}`;
+  return `y=${mPart}${b}`; // b < 0, its string includes the minus sign
+}
+
+function lineEqHint(x1: number, y1: number, x2: number, y2: number, m: number, b: number): string {
+  const dy = y2 - y1, dx = x2 - x1;
+  const canonical = lineEqCanonical(m, b);
+  const mCoef = m === 1 ? "" : m === -1 ? "−" : `${m}·`;
+  return [
+    `Step 1 — Find slope:  m = (y₂ − y₁)/(x₂ − x₁) = (${y2}−${y1})/(${x2}−${x1}) = ${dy}/${dx} = ${m}`,
+    `Step 2 — Use y = mx + b with (${x1}, ${y1}):  ${y1} = ${mCoef}${x1} + b  →  b = ${b}`,
+    `Step 3 — Write the equation:  ${canonical}`,
+  ].join("\n");
+}
+
+export function buildLinesQueue(level: 1 | 2 | "review"): Pair[] {
+  if (level === "review") {
+    return shuffle([
+      ...buildLinesQueue(1).slice(0, 8),
+      ...buildLinesQueue(2).slice(0, 8),
+    ]);
+  }
+
+  const pairs: Pair[] = [];
+
+  if (level === 1) {
+    for (const m of [-4, -3, -2, -1, 1, 2, 3, 4]) {
+      for (const x1 of [-2, -1, 0, 1, 2]) {
+        for (const dx of [1, 2, 3]) {
+          const x2 = x1 + dx;
+          for (const y1 of [-4, -2, 0, 2, 4]) {
+            const y2 = y1 + m * dx;
+            if (Math.abs(y2) > 12) continue;
+            const q = `Find the slope of the line through (${x1}, ${y1}) and (${x2}, ${y2})`;
+            pairs.push(linesP(q, slopeHint(x1, y1, x2, y2, m), [`${m}`], "lines-l1"));
+          }
+        }
+      }
+    }
+  }
+
+  if (level === 2) {
+    for (const m of [-3, -2, -1, 1, 2, 3]) {
+      for (const b of [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]) {
+        for (const x1 of [-2, -1, 0, 1]) {
+          for (const dx of [1, 2]) {
+            const x2 = x1 + dx;
+            const y1 = m * x1 + b;
+            const y2 = m * x2 + b;
+            if (Math.abs(y1) > 12 || Math.abs(y2) > 12) continue;
+            const q = `Write the equation of the line through (${x1}, ${y1}) and (${x2}, ${y2})`;
+            const canonical = lineEqCanonical(m, b);
+            pairs.push(linesP(q, lineEqHint(x1, y1, x2, y2, m, b), [canonical], "lines-l2"));
+          }
+        }
+      }
+    }
+  }
+
+  return shuffle(pairs).slice(0, 20);
+}
+
+// ─── Big Review ───────────────────────────────────────────────────────────────
+
+export function buildBigReviewQueue(): Pair[] {
+  return shuffle([
+    ...buildEquationQueue("review").slice(0, 5),
+    ...buildSystemsQueue("review").slice(0, 5),
+    ...buildInequalityQueue("review").slice(0, 5),
+    ...buildWordProblemQueue("review").slice(0, 5),
+    ...buildFactoringQueue("review").slice(0, 5),
+    ...buildQFQueue("review").slice(0, 5),
+    ...buildLinesQueue("review").slice(0, 5),
+  ]);
 }
 
 export function shuffle<T>(arr: T[]): T[] {

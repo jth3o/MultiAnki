@@ -316,6 +316,17 @@ export async function upsertQFPoints(student_name: string, newPoints: number): P
     .upsert({ student_name, points: newPoints }, { onConflict: "student_name" });
 }
 
+export async function fetchLinesPoints(student_name: string): Promise<number> {
+  const { data } = await supabase.from("lines_progress")
+    .select("points").eq("student_name", student_name).maybeSingle();
+  return data?.points ?? 0;
+}
+
+export async function upsertLinesPoints(student_name: string, newPoints: number): Promise<void> {
+  await supabase.from("lines_progress")
+    .upsert({ student_name, points: newPoints }, { onConflict: "student_name" });
+}
+
 export async function fetchFactPoints(student_name: string): Promise<number> {
   const { data } = await supabase.from("factoring_progress")
     .select("points").eq("student_name", student_name).maybeSingle();

@@ -701,6 +701,29 @@ body {
 
 .btn-collection:hover { border-color: #c5c3be; color: var(--text); }
 
+.big-review-section {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid var(--border);
+}
+
+.btn-big-review {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 1.125rem;
+  font-family: var(--font);
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.btn-big-review:hover { background: var(--accent-hover); transform: translateY(-1px); }
+
 /* ── Egg reveal ──────────────────────────────────────────────────────────────── */
 
 .egg-reveal-card { min-height: 360px; justify-content: center; }
