@@ -23,7 +23,7 @@ export interface Pair {
   a: number;
   b: number;
   // undefined = multiplication; "div" = (a*b)÷b=a; "sq" = a²; "sqrt" = √(a²)=a; "add" = a+b; GeoOp/ConvOp/EqOp/SysOp/IneqOp/FactOp = others
-  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp | IneqOp | WPOp | FactOp;
+  op?: "div" | "sq" | "sqrt" | "add" | GeoOp | ConvOp | EqOp | SysOp | IneqOp | WPOp | FactOp | QFOp;
   c?: number;       // triangle perimeter third side, OR abs value / sys second answer
   answer?: number;  // equation answer (x value, or first/larger solution for abs value, or sys X)
   eqStr?: string;   // display string; for sys: "eq1|eq2|xAns|yAns"
@@ -1392,6 +1392,110 @@ export function buildFactoringQueue(level: 1 | 2 | 3 | 4 | 5 | "review"): Pair[]
             const acH = leadingAcHint(a, b, c, d, ans1);
             pairs.push(factP(question, answers, "fact-l5", hint, acH));
           }
+        }
+      }
+    }
+  }
+
+  return shuffle(pairs);
+}
+
+// ─── Quadratic Formula ────────────────────────────────────────────────────────
+
+export type QFOp = "qf-l1" | "qf-l2" | "qf-l3";
+
+export function isQF(pair: Partial<Pair>): boolean {
+  return typeof pair.op === "string" && pair.op.startsWith("qf-");
+}
+
+export function qfLevel(points: number): 1 | 2 | 3 | "review" {
+  if (points >= 12) return "review";
+  if (points >= 8)  return 3;
+  if (points >= 4)  return 2;
+  return 1;
+}
+
+export const QF_LEVEL_NAMES: Record<1 | 2 | 3 | "review", string> = {
+  1: "Positive Roots",
+  2: "Negative Roots",
+  3: "Leading Coefficient",
+  review: "Review",
+};
+
+function qfEqStr(A: number, B: number, C: number): string {
+  const Astr = A === 1 ? "x²" : `${A}x²`;
+  const Bstr = B === 0 ? "" : B === 1 ? " + x" : B === -1 ? " − x" : B > 0 ? ` + ${B}x` : ` − ${Math.abs(B)}x`;
+  const Cstr = C === 0 ? "" : C > 0 ? ` + ${C}` : ` − ${Math.abs(C)}`;
+  return `${Astr}${Bstr}${Cstr} = 0`;
+}
+
+function qfSteps(A: number, B: number, C: number, r1: number, r2: number): string {
+  const D     = B * B - 4 * A * C;
+  const sqrtD = Math.round(Math.sqrt(D));
+  const negB  = -B;
+  const twoA  = 2 * A;
+  const negBStr = negB < 0 ? `(${negB})` : `${negB}`;
+  const lo = Math.min(r1, r2), hi = Math.max(r1, r2);
+  const lastLine = r1 === r2
+    ? `x = ${negBStr} / ${twoA} = ${r1}`
+    : `x = (${negBStr} + ${sqrtD}) / ${twoA} = ${negB + sqrtD} / ${twoA} = ${hi}  or  x = (${negBStr} − ${sqrtD}) / ${twoA} = ${negB - sqrtD} / ${twoA} = ${lo}`;
+  return [
+    `Identify:  a = ${A},  b = ${B},  c = ${C}`,
+    `Discriminant:  b² − 4ac = (${B})² − 4·${A}·${C} = ${B * B} − ${4 * A * C} = ${D}`,
+    `√discriminant = √${D} = ${sqrtD}`,
+    `x = (−b ± √D) / 2a = (${negBStr} ± ${sqrtD}) / ${twoA}`,
+    lastLine,
+  ].join("\n");
+}
+
+function qfPair(A: number, B: number, C: number, r1: number, r2: number, op: QFOp): Pair {
+  const lo = Math.min(r1, r2), hi = Math.max(r1, r2);
+  const eq   = qfEqStr(A, B, C);
+  const hint = qfSteps(A, B, C, r1, r2);
+  // store lo and hi as the two accepted answers
+  return { a: lo, b: hi, op, eqStr: `${eq}~~${hint}|${lo}|${hi}` };
+}
+
+export function buildQFQueue(level: 1 | 2 | 3 | "review"): Pair[] {
+  if (level === "review") {
+    return shuffle([
+      ...buildQFQueue(1).slice(0, 6),
+      ...buildQFQueue(2).slice(0, 6),
+      ...buildQFQueue(3).slice(0, 6),
+    ]);
+  }
+
+  const pairs: Pair[] = [];
+
+  if (level === 1) {
+    // Monic, both roots positive integers 1–8
+    for (let r1 = 1; r1 <= 8; r1++) {
+      for (let r2 = r1; r2 <= 8; r2++) {
+        const B = -(r1 + r2), C = r1 * r2;
+        pairs.push(qfPair(1, B, C, r1, r2, "qf-l1"));
+      }
+    }
+  }
+
+  if (level === 2) {
+    // Monic, at least one root non-positive (covers negative roots and mixed signs)
+    for (let r1 = -6; r1 <= 0; r1++) {
+      for (let r2 = r1; r2 <= 6; r2++) {
+        if (r1 === 0 && r2 === 0) continue;
+        if (r1 > 0 && r2 > 0) continue; // keep level 1 flavour out
+        const B = -(r1 + r2), C = r1 * r2;
+        pairs.push(qfPair(1, B, C, r1, r2, "qf-l2"));
+      }
+    }
+  }
+
+  if (level === 3) {
+    // Non-monic a ∈ {2, 3}, positive roots — answers are still integers
+    for (const a of [2, 3]) {
+      for (let r1 = 1; r1 <= 5; r1++) {
+        for (let r2 = r1; r2 <= 5; r2++) {
+          const B = -a * (r1 + r2), C = a * r1 * r2;
+          pairs.push(qfPair(a, B, C, r1, r2, "qf-l3"));
         }
       }
     }

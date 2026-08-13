@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   DURATIONS, buildInitialQueue, buildDivisionQueue, buildSquaresAndRootsQueue, buildGeoQueue,
-  buildAdditionQueue, buildConversionQueue, buildEquationQueue, buildSystemsQueue, buildInequalityQueue, buildWordProblemQueue, buildThreeMinQueue, buildBonusEqQueue, buildBonusSysQueue, buildFactoringQueue, shuffle,
-  isGeo, geoAnswer, isConv, convAnswer, isEq, eqLevel, EQ_LEVEL_NAMES, isSys, sysLevel, SYS_LEVEL_NAMES, isIneq, ineqLevel, INEQ_LEVEL_NAMES, isWP, wpLevel, WP_LEVEL_NAMES, isFact, factLevel, FACT_LEVEL_NAMES, evalEquation,
+  buildAdditionQueue, buildConversionQueue, buildEquationQueue, buildSystemsQueue, buildInequalityQueue, buildWordProblemQueue, buildThreeMinQueue, buildBonusEqQueue, buildBonusSysQueue, buildFactoringQueue, buildQFQueue, shuffle,
+  isGeo, geoAnswer, isConv, convAnswer, isEq, eqLevel, EQ_LEVEL_NAMES, isSys, sysLevel, SYS_LEVEL_NAMES, isIneq, ineqLevel, INEQ_LEVEL_NAMES, isWP, wpLevel, WP_LEVEL_NAMES, isFact, factLevel, FACT_LEVEL_NAMES, isQF, qfLevel, QF_LEVEL_NAMES, evalEquation,
   type Pair, type SessionMode, type FactStat, type ConvOp,
 } from "./curriculum";
-import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, fetchEqPoints, upsertEqPoints, fetchSysPoints, upsertSysPoints, fetchIneqPoints, upsertIneqPoints, fetchWPPoints, upsertWPPoints, fetchFactPoints, upsertFactPoints, fetchStudentProgress, addCorrectAnswers, recordEggOpened, fetchCollection, addToCollection, type PairWeight, type OwnedCollectible } from "./supabase";
+import { checkStudent, logFact, logSession, fetchFactStats, updateFactProgress, fetchInitialTestDone, markInitialTestDone, fetchSetting, fetchAllPairWeights, upsertPairWeights, fetchEqPoints, upsertEqPoints, fetchSysPoints, upsertSysPoints, fetchIneqPoints, upsertIneqPoints, fetchWPPoints, upsertWPPoints, fetchFactPoints, upsertFactPoints, fetchQFPoints, upsertQFPoints, fetchStudentProgress, addCorrectAnswers, recordEggOpened, fetchCollection, addToCollection, type PairWeight, type OwnedCollectible } from "./supabase";
 import { COLLECTIBLES, RARITY_LABEL, RARITY_COLOR, collectibleImageUrl, rollCollectible, type Collectible, type Rarity } from "./collectibles";
 import "./App.css";
 
@@ -143,6 +143,7 @@ export default function App() {
   const [ineqPoints, setIneqPoints]           = useState<number>(0);
   const [wpPoints, setWPPoints]               = useState<number>(0);
   const [factPoints, setFactPoints]           = useState<number>(0);
+  const [qfPoints, setQFPoints]               = useState<number>(0);
   const [pendingEggs, setPendingEggs]         = useState<number>(0);
   const [collection, setCollection]           = useState<OwnedCollectible[]>([]);
   const [revealedCollectible, setRevealedCollectible] = useState<Collectible | null>(null);
@@ -177,7 +178,7 @@ export default function App() {
   const sessionCorrectsRef  = useRef<Pair[]>([]);
   const sessionSlowsRef     = useRef<Pair[]>([]);
   const activeModeRef       = useRef<SessionMode>("practice");
-  const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq" | "sys" | "ineq" | "wp" | "fact">("mult");
+  const activeOpRef         = useRef<"mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq" | "sys" | "ineq" | "wp" | "fact" | "qf">("mult");
   const eqPointsRef         = useRef<number>(0);
   const sysPointsRef        = useRef<number>(0);
   const ineqPointsRef       = useRef<number>(0);
@@ -195,6 +196,9 @@ export default function App() {
   const factPointsRef       = useRef<number>(0);
   const activeFactLevelRef  = useRef<string>("");
   const pendingFactQueueRef = useRef<Pair[] | null>(null);
+  const qfPointsRef         = useRef<number>(0);
+  const activeQFLevelRef    = useRef<string>("");
+  const pendingQFQueueRef   = useRef<Pair[] | null>(null);
   const sessionExpiredRef   = useRef(false);
   const sessionCorrectRef  = useRef(0);
   const sessionTotalRef    = useRef(0);
@@ -215,6 +219,7 @@ export default function App() {
   useEffect(() => { ineqPointsRef.current = ineqPoints; }, [ineqPoints]);
   useEffect(() => { wpPointsRef.current = wpPoints; }, [wpPoints]);
   useEffect(() => { factPointsRef.current = factPoints; }, [factPoints]);
+  useEffect(() => { qfPointsRef.current = qfPoints; }, [qfPoints]);
 
   // Stage a new eq queue when level advances — pracNext will apply it after feedback is shown
   useEffect(() => {
@@ -272,12 +277,23 @@ export default function App() {
     }
   }, [factPoints]);
 
+  useEffect(() => {
+    if (activeOpRef.current !== "qf") return;
+    if (phaseRef.current !== "review" && phaseRef.current !== "practice") return;
+    const newLevel = qfLevel(qfPoints);
+    const newLevelName = QF_LEVEL_NAMES[newLevel];
+    if (newLevelName !== activeQFLevelRef.current) {
+      activeQFLevelRef.current = newLevelName;
+      pendingQFQueueRef.current = buildQFQueue(newLevel);
+    }
+  }, [qfPoints]);
+
   // When the student name is already remembered, fetch their data from Supabase on mount.
   useEffect(() => {
     const name = loadStudentName();
     if (!name) return;
     (async () => {
-      const [done, allWeights, durationStr, eqPts, sysPts, ineqPts, wpPts, factPts, prog, coll] = await Promise.all([
+      const [done, allWeights, durationStr, eqPts, sysPts, ineqPts, wpPts, factPts, qfPts, prog, coll] = await Promise.all([
         fetchInitialTestDone(name),
         fetchAllPairWeights(name),
         fetchSetting("practice_duration_secs", "300"),
@@ -286,6 +302,7 @@ export default function App() {
         fetchIneqPoints(name),
         fetchWPPoints(name),
         fetchFactPoints(name),
+        fetchQFPoints(name),
         fetchStudentProgress(name),
         fetchCollection(name),
       ]);
@@ -298,6 +315,8 @@ export default function App() {
       setWPPoints(wpPts);
       setFactPoints(factPts);
       factPointsRef.current = factPts;
+      setQFPoints(qfPts);
+      qfPointsRef.current = qfPts;
       wpPointsRef.current = wpPts;
       ineqPointsRef.current = ineqPts;
       sysPointsRef.current = sysPts;
@@ -382,7 +401,7 @@ export default function App() {
     }
 
     const curPhase = phaseRef.current;
-    const opLabel = op === "geo" ? "Geometry" : op === "conv" ? "Conversions" : op === "add" ? "Addition" : op === "eq" ? "Solving Equations" : op === "sys" ? "Systems of Equations" : op === "ineq" ? "Inequalities" : op === "wp" ? "Word Problems" : op === "fact" ? "Factoring" : op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
+    const opLabel = op === "geo" ? "Geometry" : op === "conv" ? "Conversions" : op === "add" ? "Addition" : op === "eq" ? "Solving Equations" : op === "sys" ? "Systems of Equations" : op === "ineq" ? "Inequalities" : op === "wp" ? "Word Problems" : op === "fact" ? "Factoring" : op === "qf" ? "Quadratic Formula" : op === "div" ? "Division" : op === "sq" ? "Squares & Roots" : "Multiplication";
     logSession({
       student_name: student,
       session_type: curPhase === "review" ? "review" : mode,
@@ -392,7 +411,7 @@ export default function App() {
     });
 
     // Award eggs only for solving equations, systems, inequalities, word problems, and factoring
-    if (correct > 0 && (op === "eq" || op === "sys" || op === "ineq" || op === "wp" || op === "fact")) {
+    if (correct > 0 && (op === "eq" || op === "sys" || op === "ineq" || op === "wp" || op === "fact" || op === "qf")) {
       addCorrectAnswers(student, correct + bonusPointsRef.current).then(({ totalCorrect, eggsOpened }) => {
         totalCorrectRef.current = totalCorrect;
         eggsOpenedRef.current = eggsOpened;
@@ -438,7 +457,7 @@ export default function App() {
     setSessionSlows([]);
     setSessionCorrect(0);
     setSessionTotal(0);
-    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) || isEq(q[0] ?? {}) || isIneq(q[0] ?? {}) || isWP(q[0] ?? {}) || isFact(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
+    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) || isEq(q[0] ?? {}) || isIneq(q[0] ?? {}) || isWP(q[0] ?? {}) || isFact(q[0] ?? {}) || isQF(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
@@ -482,7 +501,7 @@ export default function App() {
 
   // ── Start review ───────────────────────────────────────────────────────────
 
-  const startReview = (op: "mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq" | "sys" | "ineq" | "wp" | "fact") => {
+  const startReview = (op: "mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq" | "sys" | "ineq" | "wp" | "fact" | "qf") => {
     isFinishingRef.current = false;
     sessionExpiredRef.current = false;
 
@@ -555,6 +574,10 @@ export default function App() {
       const level = wpLevel(wpPoints);
       activeWPLevelRef.current = WP_LEVEL_NAMES[level];
       q = buildWordProblemQueue(level);
+    } else if (op === "qf") {
+      const level = qfLevel(qfPoints);
+      activeQFLevelRef.current = QF_LEVEL_NAMES[level];
+      q = buildQFQueue(level);
     } else if (op === "fact") {
       const level = factLevel(factPoints);
       activeFactLevelRef.current = FACT_LEVEL_NAMES[level];
@@ -609,11 +632,11 @@ export default function App() {
     setSessionTotal(0);
     setStreak(0);
     bonusPointsRef.current = 0;
-    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) || isEq(q[0] ?? {}) || isIneq(q[0] ?? {}) || isWP(q[0] ?? {}) || isFact(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
+    setQuestionSigns(q[0]?.op === "sq" || q[0]?.op === "sqrt" || q[0]?.op === "add" || isGeo(q[0] ?? {}) || isConv(q[0] ?? {}) || isEq(q[0] ?? {}) || isIneq(q[0] ?? {}) || isWP(q[0] ?? {}) || isFact(q[0] ?? {}) || isQF(q[0] ?? {}) ? { negA: false, negB: false } : randomSigns());
     setPracPhase("question");
     setPracInput("");
     setPracFeedback(null);
-    setSecondsLeft(op === "geo" || op === "conv" || op === "eq" || op === "sys" || op === "ineq" || op === "wp" || op === "fact" ? 900 : practiceDurationSecs);
+    setSecondsLeft(op === "geo" || op === "conv" || op === "eq" || op === "sys" || op === "ineq" || op === "wp" || op === "fact" || op === "qf" ? 900 : practiceDurationSecs);
     setPhase("review");
 
     // Soft timer: marks expired, ends at next question boundary
@@ -642,7 +665,21 @@ export default function App() {
     let hasPi = false;
     let answerText: string | undefined;
 
-    if (isFact(pair)) {
+    if (isQF(pair)) {
+      const parts = pair.eqStr!.split("|");
+      const r1 = parseInt(parts[1]), r2 = parseInt(parts[2]);
+      const inputs = pracInput.trim().split(",").map(s => parseInt(s.trim(), 10));
+      if (r1 === r2) {
+        correct = inputs.length >= 1 && inputs[0] === r1 && (inputs.length === 1 || inputs[1] === r1);
+        answerText = `x = ${r1}`;
+      } else {
+        const sorted = [...inputs].sort((a, b) => a - b);
+        const lo = Math.min(r1, r2), hi = Math.max(r1, r2);
+        correct = sorted.length === 2 && sorted[0] === lo && sorted[1] === hi;
+        answerText = `x = ${lo}, x = ${hi}`;
+      }
+      expectedNum = r1;
+    } else if (isFact(pair)) {
       const parts = pair.eqStr!.split("|");
       const accepted = parts.slice(1).map(s => s.replace(/\s/g, "").toLowerCase());
       const normalized = pracInput.trim().replace(/\s/g, "").toLowerCase();
@@ -721,7 +758,7 @@ export default function App() {
       const newStreak = streak + 1;
       setStreak(newStreak);
       const op = activeOpRef.current;
-      if (op === "eq" || op === "sys" || op === "ineq" || op === "wp" || op === "fact") {
+      if (op === "eq" || op === "sys" || op === "ineq" || op === "wp" || op === "fact" || op === "qf") {
         const streakBonus = newStreak >= 10 ? 3 : newStreak >= 5 ? 2 : newStreak >= 3 ? 1 : 0;
         const doubleBonus = pair.bonus ? 1 : 0;
         bonusPointsRef.current += streakBonus + doubleBonus;
@@ -756,6 +793,12 @@ export default function App() {
         setFactPoints(newPts);
         upsertFactPoints(studentName ?? "", newPts);
       }
+      if (isQF(pair)) {
+        const newPts = Math.min(12, qfPointsRef.current + 1);
+        qfPointsRef.current = newPts;
+        setQFPoints(newPts);
+        upsertQFPoints(studentName ?? "", newPts);
+      }
     } else {
       setSessionMistakes((m) => [...m, pair]);
       setStreak(0);
@@ -767,10 +810,10 @@ export default function App() {
     const lessonLabel = activeModeRef.current === "initial" ? "Initial Test"
       : opRef === "geo" ? "Geometry" : opRef === "conv" ? "Conversions" : opRef === "add" ? "Addition"
       : opRef === "eq" ? "Solving Equations" : opRef === "sys" ? "Systems of Equations"
-      : opRef === "ineq" ? "Inequalities" : opRef === "wp" ? "Word Problems" : opRef === "fact" ? "Factoring"
+      : opRef === "ineq" ? "Inequalities" : opRef === "wp" ? "Word Problems" : opRef === "fact" ? "Factoring" : opRef === "qf" ? "Quadratic Formula"
       : opRef === "div" ? "Division" : opRef === "sq" ? "Squares & Roots" : "Multiplication";
     logFact({ student_name: studentName ?? "", lesson: lessonLabel, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: expectedNum, correct, time_seconds: correct ? elapsed : null });
-    if (!isGeo(pair) && !isConv(pair) && !isEq(pair) && !isSys(pair) && !isIneq(pair) && !isWP(pair) && !isFact(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
+    if (!isGeo(pair) && !isConv(pair) && !isEq(pair) && !isSys(pair) && !isIneq(pair) && !isWP(pair) && !isFact(pair) && !isQF(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, correct);
     setPracFeedback({ correct, answer: expectedNum, hasPi, answerText });
     setPracPhase("feedback");
   };
@@ -789,7 +832,12 @@ export default function App() {
       : opRef2 === "div" ? "Division" : opRef2 === "sq" ? "Squares & Roots" : "Multiplication";
     logFact({ student_name: studentName ?? "", lesson: lessonLabel2, session_mode: sessionMode, a: pair.a, b: pair.b, answer_given: null, correct: false, time_seconds: null });
     if (!isGeo(pair) && !isConv(pair) && !isEq(pair) && !isSys(pair) && !isIneq(pair) && !isWP(pair)) updateFactProgress(studentName ?? "", pair.a, pair.b, false);
-    if (isFact(pair)) {
+    if (isQF(pair)) {
+      const parts = pair.eqStr!.split("|");
+      const r1 = parseInt(parts[1]), r2 = parseInt(parts[2]);
+      const ansText = r1 === r2 ? `x = ${r1}` : `x = ${Math.min(r1,r2)}, x = ${Math.max(r1,r2)}`;
+      setPracFeedback({ correct: false, answer: r1, answerText: ansText });
+    } else if (isFact(pair)) {
       const parts = pair.eqStr!.split("|");
       setPracFeedback({ correct: false, answer: 0, answerText: parts[1] });
     } else if (isWP(pair)) {
@@ -850,6 +898,10 @@ export default function App() {
       newQueue = pendingFactQueueRef.current;
       pendingFactQueueRef.current = null;
     }
+    if (pendingQFQueueRef.current !== null) {
+      newQueue = pendingQFQueueRef.current;
+      pendingQFQueueRef.current = null;
+    }
 
     // Eq review: refill queue when exhausted until timer expires
     if (newQueue.length === 0 && activeOpRef.current === "eq" && eqLevel(eqPointsRef.current) === "review" && !sessionExpiredRef.current) {
@@ -870,6 +922,10 @@ export default function App() {
     // Fact review: refill queue when exhausted until timer expires
     if (newQueue.length === 0 && activeOpRef.current === "fact" && factLevel(factPointsRef.current) === "review" && !sessionExpiredRef.current) {
       newQueue = buildFactoringQueue("review");
+    }
+    // QF review: refill queue when exhausted until timer expires
+    if (newQueue.length === 0 && activeOpRef.current === "qf" && qfLevel(qfPointsRef.current) === "review" && !sessionExpiredRef.current) {
+      newQueue = buildQFQueue("review");
     }
 
     if (newQueue.length === 0 || sessionExpiredRef.current) {
@@ -923,7 +979,7 @@ export default function App() {
     // Save egg points earned so far if in an egg-awarding unit
     const backOp = activeOpRef.current;
     const backCorrect = sessionCorrectRef.current;
-    if (backCorrect > 0 && (backOp === "eq" || backOp === "sys" || backOp === "ineq" || backOp === "wp" || backOp === "fact")) {
+    if (backCorrect > 0 && (backOp === "eq" || backOp === "sys" || backOp === "ineq" || backOp === "wp" || backOp === "fact" || backOp === "qf")) {
       addCorrectAnswers(studentNameRef.current ?? "", backCorrect + bonusPointsRef.current).then(({ totalCorrect, eggsOpened }) => {
         totalCorrectRef.current = totalCorrect;
         eggsOpenedRef.current = eggsOpened;
@@ -1069,6 +1125,7 @@ export default function App() {
             : activeOpRef.current === "ineq" ? `Inequalities · ${activeIneqLevelRef.current}`
             : activeOpRef.current === "wp"   ? `Word Problems · ${activeWPLevelRef.current}`
             : activeOpRef.current === "fact" ? `Factoring · ${activeFactLevelRef.current}`
+            : activeOpRef.current === "qf"   ? `Quadratic Formula · ${activeQFLevelRef.current}`
             : activeOpRef.current === "div"  ? "Division" : "Multiplication"}
           tag=""
           secondsLeft={secondsLeft}
@@ -1161,7 +1218,7 @@ function InitialWelcomeView({ name, onStart, onSkip }: { name: string; onStart: 
 function LobbyView({ initialDone, pendingEggs, onReview, onInitialTest, onOpenEgg, onCollection }: {
   initialDone: boolean;
   pendingEggs: number;
-  onReview: (op: "mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq" | "sys" | "ineq" | "wp" | "fact") => void;
+  onReview: (op: "mult" | "div" | "sq" | "geo" | "add" | "conv" | "eq" | "sys" | "ineq" | "wp" | "fact" | "qf") => void;
   onInitialTest: () => void;
   onOpenEgg: () => void;
   onCollection: () => void;
@@ -1246,6 +1303,13 @@ function LobbyView({ initialDone, pendingEggs, onReview, onInitialTest, onOpenEg
       <div className="op-section">
         <p className="lobby-heading">Factoring</p>
         <button className="btn-op btn-practice" onClick={() => onReview("fact")}>
+          Practice
+        </button>
+      </div>
+
+      <div className="op-section">
+        <p className="lobby-heading">Quadratic Formula</p>
+        <button className="btn-op btn-practice" onClick={() => onReview("qf")}>
           Practice
         </button>
       </div>
@@ -1514,6 +1578,17 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
                 <p className="conv-hint">Enter X, Y (e.g. 5, 12)</p>
               </div>
             );
+          })() : isQF(pair) ? (() => {
+            const eq = pair.eqStr!.split("|")[0].split("~~")[0];
+            const parts = pair.eqStr!.split("|");
+            const r1 = parseInt(parts[1]), r2 = parseInt(parts[2]);
+            return (
+              <div className="conv-question">
+                <p className="conv-given">{eq}</p>
+                <p className="conv-hint" style={{ fontStyle: "italic" }}>x = (−b ± √(b²−4ac)) / 2a</p>
+                <p className="conv-hint">{r1 === r2 ? "Enter the solution" : "Enter both solutions separated by a comma (e.g. 3, −1)"}</p>
+              </div>
+            );
           })() : isFact(pair) ? (
             <div className="conv-question">
               <p className="conv-given">Factor: {pair.eqStr!.split("|")[0].split("~~")[0]}</p>
@@ -1564,7 +1639,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
               <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "center" }}>
                 {pair.op === "eq-l6" && <span className="conv-percent-label">{l6SolveVar} =</span>}
                 <input ref={inputRef} className="answer-input"
-                  type={(geo || conv || eq || isSys(pair) || isIneq(pair) || isWP(pair) || isFact(pair)) ? "text" : "number"} inputMode={geo && isCircle ? "text" : "numeric"}
+                  type={(geo || conv || eq || isSys(pair) || isIneq(pair) || isWP(pair) || isFact(pair) || isQF(pair)) ? "text" : "number"} inputMode={geo && isCircle ? "text" : "numeric"}
                   value={input} onChange={(e) => onInput(e.target.value)} onKeyDown={onKeyDown}
                   placeholder={isIneq(pair) ? "e.g. X > 4" : isSys(pair) || isWP(pair) ? "e.g. 5, 12" : isCircle ? "e.g. 25π" : convQ?.isFraction ? "e.g. 3/4" : eq ? (pair.op === "eq-l4" ? "e.g. 5, −3" : "") : "your answer"}
                   style={{ flex: 1 }} />
@@ -1600,6 +1675,24 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
                     <p className="sys-eq">{eq2}</p>
                   </div>
                   <p className="conv-given">X = <strong>{xStr}</strong>, Y = <strong>{yStr}</strong></p>
+                </div>
+              );
+            })() : isQF(pair) ? (() => {
+              const [questionPart] = pair.eqStr!.split("|");
+              const [displayEq, hint] = questionPart.split("~~");
+              const steps = hint ? hint.split("\n") : [];
+              return (
+                <div className="conv-question fact-feedback">
+                  <p className="conv-given">{displayEq}</p>
+                  {!feedback.correct && input.trim() && (
+                    <p className="fact-your-answer">You wrote: <span>{input.trim()}</span></p>
+                  )}
+                  {steps.length > 0 && (
+                    <ol className="fact-steps">
+                      {steps.map((s, i) => <li key={i}>{s}</li>)}
+                    </ol>
+                  )}
+                  <p className="conv-given">Answer: <strong>{feedback.answerText}</strong></p>
                 </div>
               );
             })() : isFact(pair) ? (() => {
