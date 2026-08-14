@@ -741,7 +741,7 @@ export default function App() {
         const normalized = pracInput.trim().replace(/\s/g, "").toLowerCase();
         correct = accepted.includes(normalized);
         answerText = parts[2] ?? "";
-      } else if (pair.op === "eq-l4") {
+      } else if (pair.op === "eq-l4" || pair.op === "eq-sq") {
         // Two solutions: accept "a, b" in any order
         const parts = pracInput.trim().split(",").map(s => parseInt(s.trim(), 10));
         const sorted = [...parts].sort((a, b) => b - a);
@@ -893,7 +893,7 @@ export default function App() {
       setPracFeedback({ correct: false, answer: parseInt(parts[2]), answerText: `X = ${parts[2]}, Y = ${parts[3]}` });
     } else if (isEq(pair)) {
       const ansText = pair.op === "eq-l6" ? (pair.eqStr?.split("|")[2] ?? "")
-        : pair.op === "eq-l4" ? `${pair.answer}, ${pair.c}` : undefined;
+        : pair.op === "eq-l4" || pair.op === "eq-sq" ? `${pair.answer}, ${pair.c}` : undefined;
       setPracFeedback({ correct: false, answer: pair.answer ?? 0, answerText: ansText });
     } else if (isConv(pair)) {
       const ca = convAnswer(pair);
@@ -1699,7 +1699,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
               ) : (
                 <p className="conv-given">{pair.eqStr}</p>
               )}
-              {pair.op === "eq-l4" && <p className="conv-hint">Enter both solutions separated by a comma (e.g. 5, −3)</p>}
+              {(pair.op === "eq-l4" || pair.op === "eq-sq") && <p className="conv-hint">Enter both solutions separated by a comma (e.g. 5, −5)</p>}
             </div>
           ) : conv && convQ ? (
             <div className="conv-question">
@@ -1722,7 +1722,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
                 <input ref={inputRef} className="answer-input"
                   type={(geo || conv || eq || isSys(pair) || isIneq(pair) || isWP(pair) || isFact(pair) || isQF(pair) || isLines(pair)) ? "text" : "number"} inputMode={geo && isCircle ? "text" : "numeric"}
                   value={input} onChange={(e) => onInput(e.target.value)} onKeyDown={onKeyDown}
-                  placeholder={isIneq(pair) ? "e.g. X > 4" : isSys(pair) || isWP(pair) ? "e.g. 5, 12" : isCircle ? "e.g. 25π" : convQ?.isFraction ? "e.g. 3/4" : eq ? (pair.op === "eq-l4" ? "e.g. 5, −3" : "") : "your answer"}
+                  placeholder={isIneq(pair) ? "e.g. X > 4" : isSys(pair) || isWP(pair) ? "e.g. 5, 12" : isCircle ? "e.g. 25π" : convQ?.isFraction ? "e.g. 3/4" : eq ? (pair.op === "eq-l4" || pair.op === "eq-sq" ? "e.g. 5, −5" : "") : "your answer"}
                   style={{ flex: 1 }} />
                 {isCircle && (
                   <button className="btn-pi" onClick={appendPi} type="button">π</button>
@@ -1852,7 +1852,7 @@ function PracticeView({ label, tag, secondsLeft, pair, signs, input, onInput, on
                 )}
                 <p className="conv-given">
                   {pair.op === "eq-l6" ? l6SolveVar
-                    : pair.op === "eq-l4" ? "solutions"
+                    : pair.op === "eq-l4" || pair.op === "eq-sq" ? "solutions"
                     : pair.op === "eq-l5" ? (pair.eqStr?.match(/[YNMPTK]/)?.[0] ?? "X")
                     : "X"} = <strong>{feedback.answerText ?? feedback.answer}</strong>
                 </p>

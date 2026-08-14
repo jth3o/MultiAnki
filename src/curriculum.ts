@@ -13,7 +13,7 @@ export type GeoOp = "g-ra" | "g-rp" | "g-ta" | "g-tp" | "g-ca-r" | "g-ca-d" | "g
 //   f = fraction (a/b), d = decimal, p = percent
 export type ConvOp = "conv-fd" | "conv-fp" | "conv-df" | "conv-dp" | "conv-pf" | "conv-pd";
 
-export type EqOp   = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6" | "eq-frac";
+export type EqOp   = "eq-l1" | "eq-l2" | "eq-l3" | "eq-l4" | "eq-l5" | "eq-l6" | "eq-frac" | "eq-sq";
 export type SysOp  = "sys-l1" | "sys-l2" | "sys-l3" | "sys-l4" | "sys-l5" | "sys-l6";
 export type IneqOp = "ineq-l1" | "ineq-l2" | "ineq-l3" | "ineq-l4";
 export type WPOp   = "wp-c" | "wp-b";
@@ -364,6 +364,59 @@ function buildFractionEqQueue(): Pair[] {
   return shuffle(pairs.map(p => ({ ...p, eqStr: p.eqStr?.replace(/x/g, "X") })));
 }
 
+function buildSquareEqQueue(): Pair[] {
+  const pairs: Pair[] = [];
+
+  // x² = n²  →  x = ±n
+  for (let n = 2; n <= 12; n++) {
+    pairs.push({ a: n, b: 0, op: "eq-sq", answer: n, c: -n, eqStr: `X² = ${n * n}` });
+  }
+
+  // x² + a = b  →  x² = b−a  →  x = ±√(b−a), only perfect squares
+  for (let a = 1; a <= 20; a++) {
+    for (let n = 2; n <= 10; n++) {
+      const b = n * n + a;
+      pairs.push({ a, b, op: "eq-sq", answer: n, c: -n, eqStr: `X² + ${a} = ${b}` });
+    }
+  }
+
+  // x² − a = b  →  x² = b+a  →  x = ±√(b+a), only perfect squares
+  for (let a = 1; a <= 20; a++) {
+    for (let n = 2; n <= 10; n++) {
+      const b = n * n - a;
+      if (b <= 0) continue;
+      pairs.push({ a, b, op: "eq-sq", answer: n, c: -n, eqStr: `X² − ${a} = ${b}` });
+    }
+  }
+
+  // cx² = d  →  x² = d/c  →  x = ±√(d/c), only perfect squares
+  for (let c = 2; c <= 5; c++) {
+    for (let n = 2; n <= 8; n++) {
+      const d = c * n * n;
+      pairs.push({ a: c, b: d, op: "eq-sq", answer: n, c: -n, eqStr: `${c}X² = ${d}` });
+    }
+  }
+
+  // (x + a)² = b²  →  x = −a ± b  →  two distinct integer solutions
+  for (let a = 1; a <= 8; a++) {
+    for (let b = 2; b <= 8; b++) {
+      const s1 = -a + b, s2 = -a - b;
+      pairs.push({ a, b, op: "eq-sq", answer: Math.max(s1, s2), c: Math.min(s1, s2), eqStr: `(X + ${a})² = ${b * b}` });
+    }
+  }
+
+  // (x − a)² = b²  →  x = a ± b  →  two distinct integer solutions
+  for (let a = 1; a <= 8; a++) {
+    for (let b = 1; b <= 8; b++) {
+      if (b === a) continue; // would give 0 as one solution
+      const s1 = a + b, s2 = a - b;
+      pairs.push({ a, b, op: "eq-sq", answer: Math.max(s1, s2), c: Math.min(s1, s2), eqStr: `(X − ${a})² = ${b * b}` });
+    }
+  }
+
+  return shuffle(pairs);
+}
+
 export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pair[] {
   if (level === "review") {
     return shuffle([
@@ -374,6 +427,7 @@ export function buildEquationQueue(level: 1 | 2 | 3 | 4 | 5 | 6 | "review"): Pai
       ...buildEquationQueue(5).slice(0, 10),
       ...buildEquationQueue(6).slice(0, 10),
       ...buildFractionEqQueue().slice(0, 10),
+      ...buildSquareEqQueue().slice(0, 10),
     ]);
   }
 
