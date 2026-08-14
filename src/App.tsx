@@ -712,8 +712,9 @@ export default function App() {
       expectedNum = r1;
     } else if (isFact(pair)) {
       const parts = pair.eqStr!.split("|");
-      const accepted = parts.slice(1).map(s => s.replace(/\s/g, "").toLowerCase());
-      const normalized = pracInput.trim().replace(/\s/g, "").toLowerCase();
+      const normFact = (s: string) => s.replace(/\s/g, "").toLowerCase().replace(/\^2/g, "²");
+      const accepted = parts.slice(1).map(normFact);
+      const normalized = normFact(pracInput.trim());
       correct = accepted.includes(normalized);
       answerText = parts[1];
     } else if (isWP(pair)) {
